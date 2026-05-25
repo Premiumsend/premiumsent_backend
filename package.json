@@ -2,10 +2,16 @@
   "name": "telegram-save-server",
   "version": "1.0.0",
   "type": "module",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node main.js",
+    "start:server": "node server.js",
+    "start:sms": "node balanceChecker.js",
+    "start:bot": "node token.js",
+    "dev": "nodemon main.js",
+    "fragment:install": "npm install socks-proxy-agent && pip install -r requirements.txt",
+    "fragment:test-cookie": "node scripts/test-fragment-cookie.js",
+    "fragment:verify": "python modules/usdtStars/fragment_cli.py --verify-cookies"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -17,6 +23,7 @@
     "node-fetch": "^3.3.2",
     "pg": "^8.11.5",
     "readline-sync": "^1.4.10",
+    "socks-proxy-agent": "^8.0.5",
     "telegraf": "^4.16.3",
     "telegram": "^2.26.22"
   },

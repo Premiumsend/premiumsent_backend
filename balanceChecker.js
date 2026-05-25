@@ -14,7 +14,9 @@ const UZCARD_CHAT_ID = String(process.env.UZCARD_CHAT_ID);
 const TARGET_CARD_SUFFIX = process.env.TARGET_CARD_SUFFIX?.replace(/\D/g, "").slice(-4);
 
 const MATCH_API_STARS = process.env.MATCH_API_STARS;
+const MATCH_API_STARS_USDT = process.env.MATCH_API_STARS_USDT;
 const MATCH_API_PREMIUM = process.env.MATCH_API_PREMIUM;
+const MATCH_API_PREMIUM_USDT = process.env.MATCH_API_PREMIUM_USDT;
 const MATCH_API_GIFT = process.env.MATCH_API_GIFT || 'http://localhost:5001/api/gift/match';
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || '';
 const BALANCE_CHECKER_PORT = 5002;
@@ -234,25 +236,45 @@ export async function initBalanceClient() {
                     timestamp: Date.now()
                 });
 
-                // Stars API
+                const matchHeaders = {
+                    "Content-Type": "application/json",
+                    "X-Internal-Key": INTERNAL_SECRET,
+                };
+
+                // 1) RobynHood Stars
                 let res = await fetch(MATCH_API_STARS, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-Internal-Key": INTERNAL_SECRET
-                    },
+                    headers: matchHeaders,
                     body: JSON.stringify(parsed),
                 });
 
+                // 2) Fragment USDT Stars
+                if (!res.ok && MATCH_API_STARS_USDT) {
+                    console.log("⭐ Robyn stars topilmadi → USDT stars urinyapti...");
+                    res = await fetch(MATCH_API_STARS_USDT, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify(parsed),
+                    });
+                }
+
+                // 3) RobynHood Premium
                 if (!res.ok) {
                     console.log("⭐ Starsda topilmadi → PREMIUM urinyapti...");
                     res = await fetch(MATCH_API_PREMIUM, {
                         method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "X-Internal-Key": INTERNAL_SECRET
-                        },
+                        headers: matchHeaders,
                         body: JSON.stringify(parsed),
+                    });
+                }
+
+                // 4) Fragment USDT Premium (faqat summa)
+                if (!res.ok && MATCH_API_PREMIUM_USDT) {
+                    console.log("💎 Premium topilmadi → USDT premium urinyapti...");
+                    res = await fetch(MATCH_API_PREMIUM_USDT, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify({ amount: parsed.amount }),
                     });
                 }
 
@@ -354,6 +376,11 @@ app.get('/api/balance/status', (req, res) => {
         clientReady: isClientReady,
         mode: 'sms-only'
     });
+});
+
+// Order yaratilganda server.js / USDT modullar chaqiradi (signal)
+app.post('/api/balance/refresh', (req, res) => {
+    res.json({ success: true, clientReady: isClientReady });
 });
 
 // ======================

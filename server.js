@@ -7,6 +7,23 @@ import crypto from "crypto";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { Telegraf } from 'telegraf';
+import {
+  registerUsdtStarsRoutes,
+  sendStarsViaFragment,
+  usdtSlotKey,
+} from "./modules/usdtStars/index.js";
+import {
+  registerUsdtPremiumRoutes,
+  sendPremiumViaFragment,
+  usdtPremiumSlotKey,
+} from "./modules/usdtPremium/index.js";
+import {
+  ensureTokensTable,
+  seedFragmentTokensFromEnvIfEmpty,
+  getStarsPurchaseModeFromDb,
+  setStarsPurchaseModeInDb,
+  seedStarsPurchaseModeFromEnvIfMissing,
+} from "./modules/tokens/tokensDb.js";
 dotenv.config();
 const { Pool } = pkg;
 const app = express();
@@ -2302,14 +2319,15 @@ app.get("/api/transactions/all", adminAuth, async (req, res) => {
         o.order_type
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.order_type = 'stars'
+      WHERE o.order_type IN ('stars', 'stars_usdt')
       ORDER BY o.id DESC
     `);
     
     // Status mapping: completed → stars_sent
     const mapped = result.rows.map(row => ({
       ...row,
-      status: row.status === 'completed' ? 'stars_sent' : row.status
+      status: row.status === 'completed' ? 'stars_sent' : row.status,
+      delivery_type: row.order_type === 'stars_usdt' ? 'fragment' : 'robynhood',
     }));
     
     res.json(mapped);
@@ -2345,7 +2363,7 @@ app.get("/api/transactions/status/:status", adminAuth, async (req, res) => {
         o.order_type
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.status = $1 AND o.order_type = 'stars'
+      WHERE o.status = $1 AND o.order_type IN ('stars', 'stars_usdt')
       ORDER BY o.id DESC`,
       [dbStatus]
     );
@@ -2353,7 +2371,8 @@ app.get("/api/transactions/status/:status", adminAuth, async (req, res) => {
     // Status mapping: completed → stars_sent
     const mapped = result.rows.map(row => ({
       ...row,
-      status: row.status === 'completed' ? 'stars_sent' : row.status
+      status: row.status === 'completed' ? 'stars_sent' : row.status,
+      delivery_type: row.order_type === 'stars_usdt' ? 'fragment' : 'robynhood',
     }));
     
     res.json(mapped);
@@ -2925,8 +2944,8 @@ app.get("/api/transactions/:id", telegramAuth, async (req, res) => {
       // To'lov qabul qilindi, yuborilmoqda
       legacyStatus = 'payment_received';
     } else if (order.status === 'completed') {
-      if (order.order_type === 'stars') legacyStatus = 'stars_sent';
-      else if (order.order_type === 'premium') legacyStatus = 'premium_sent';
+      if (order.order_type === 'stars' || order.order_type === 'stars_usdt') legacyStatus = 'stars_sent';
+      else if (order.order_type === 'premium' || order.order_type === 'premium_usdt') legacyStatus = 'premium_sent';
       else if (order.order_type === 'gift') legacyStatus = 'gift_sent';
     }
     // Backward compatible response
@@ -3028,6 +3047,24 @@ app.post("/api/admin/stars/send/:id", adminAuth, async (req, res) => {
     const order = q.rows[0];
     if (order.status === "completed")
       return res.status(400).json({ error: "Yulduzlar allaqachon yuborilgan" });
+
+    if (order.order_type === "stars_usdt") {
+      const tx = await sendStarsViaFragment(order, {
+        pool,
+        bot,
+        releasePriceSlotByOrderId,
+        releaseDiscountPriceSlotByOrderId,
+        removePriceFromCacheByOrderId,
+        sendUnifiedChannelNotification,
+        usdtSlotKey,
+      });
+      return res.json({
+        success: true,
+        message: "Fragment orqali stars yuborildi",
+        result: tx,
+      });
+    }
+
     if (!order.recipient)
       return res.status(400).json({ error: "Recipient ID topilmadi" });
     // Yulduz yuborish funksiyasi
@@ -3906,7 +3943,7 @@ app.get("/api/admin/premium/list", adminAuth, async (req, res) => {
         o.created_at
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.order_type='premium'
+      WHERE o.order_type IN ('premium', 'premium_usdt')
     `;
     const params = [];
     // filter: status (premium_sent → completed mapping)
@@ -3927,7 +3964,8 @@ app.get("/api/admin/premium/list", adminAuth, async (req, res) => {
     // Status mapping: completed → premium_sent (frontend uchun)
     const mapped = result.rows.map(row => ({
       ...row,
-      status: row.status === 'completed' ? 'premium_sent' : row.status
+      status: row.status === 'completed' ? 'premium_sent' : row.status,
+      delivery_type: row.order_type === 'premium_usdt' ? 'fragment' : 'robynhood',
     }));
     
     res.json({ success: true, orders: mapped });
@@ -3993,12 +4031,26 @@ app.post("/api/admin/premium/resend/:id", adminAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID noto‘g‘ri" });
     const orderResult = await pool.query(
-      "SELECT * FROM orders WHERE id=$1 AND order_type='premium'",
+      "SELECT * FROM orders WHERE id=$1 AND order_type IN ('premium', 'premium_usdt')",
       [id]
     );
     if (!orderResult.rows.length)
       return res.status(404).json({ error: "Order topilmadi" });
     const order = orderResult.rows[0];
+
+    if (order.order_type === "premium_usdt") {
+      const tx = await sendPremiumViaFragment(order, {
+        pool,
+        bot,
+        releasePriceSlotByOrderId,
+        releaseDiscountPriceSlotByOrderId,
+        removePriceFromCacheByOrderId,
+        sendUnifiedChannelNotification,
+        processPremiumReferralBonusByUserId,
+      });
+      return res.json({ success: true, message: "Fragment orqali premium yuborildi", result: tx });
+    }
+
     // Premium yuborish funksiyasini chaqiramiz
     const sendResult = await sendPremiumToUser(order.id, order.recipient_username, order.type_amount);
     res.json({ success: true, ...sendResult });
@@ -7259,13 +7311,117 @@ app.get("/api/debug/slots", adminAuth, async (req, res) => {
 });
 
 // ======================
+// Fragment / USDT integratsiya
+// ======================
+/** Admin panel switch — PostgreSQL tokens.stars_purchase_mode */
+let starsPurchaseMode = "robynhood";
+
+function publicAppConfig() {
+  const fragment = starsPurchaseMode === "fragment";
+  return {
+    maintenance: false,
+    stars_purchase_mode: starsPurchaseMode,
+    stars_purchase_path: fragment ? "/usdtstars" : "/stars",
+    premium_purchase_path: fragment ? "/usdtpremium" : "/premium",
+  };
+}
+
+const INTERNAL_API_BASE =
+  process.env.INTERNAL_API_BASE ||
+  `http://127.0.0.1:${process.env.PORT || 5001}`;
+
+const internalSecretAuth = internalAuth;
+
+const usdtStarsCtx = {
+  pool,
+  bot,
+  STARS_PRICE_PER_UNIT,
+  PRICE_SLOT_CONFIG,
+  priceSlots,
+  calculateSlotPrice,
+  generateUniqueOrderSum,
+  addPriceToCache,
+  releasePriceSlotByOrderId,
+  releaseDiscountPriceSlotByOrderId,
+  removePriceFromCacheByOrderId,
+  INTERNAL_API_BASE,
+  sendUnifiedChannelNotification,
+  usdtSlotKey,
+  orderLimiter,
+  telegramAuth,
+  internalSecretAuth,
+  adminAuth,
+};
+
+const usdtPremiumCtx = {
+  pool,
+  bot,
+  PREMIUM_3,
+  PREMIUM_6,
+  PREMIUM_12,
+  PRICE_SLOT_CONFIG,
+  priceSlots,
+  calculatePremiumSlotPrice,
+  generateUniqueOrderSum,
+  addPriceToCache,
+  releasePriceSlotByOrderId,
+  releaseDiscountPriceSlotByOrderId,
+  removePriceFromCacheByOrderId,
+  INTERNAL_API_BASE,
+  sendUnifiedChannelNotification,
+  processPremiumReferralBonusByUserId,
+  orderLimiter,
+  telegramAuth,
+  internalSecretAuth,
+};
+
+registerUsdtStarsRoutes(app, usdtStarsCtx);
+registerUsdtPremiumRoutes(app, usdtPremiumCtx);
+
+app.get("/api/app-config", (_req, res) => {
+  res.json(publicAppConfig());
+});
+
+app.get("/api/admin/stars-purchase-mode", adminAuth, (_req, res) => {
+  res.json({ success: true, ...publicAppConfig() });
+});
+
+app.post("/api/admin/stars-purchase-mode", adminAuth, async (req, res) => {
+  try {
+    const mode = req.body?.mode;
+    if (mode !== "robynhood" && mode !== "fragment") {
+      return res.status(400).json({ error: "mode: robynhood | fragment" });
+    }
+    starsPurchaseMode = await setStarsPurchaseModeInDb(pool, mode);
+    console.log(`💎 Admin: stars purchase mode → ${starsPurchaseMode}`);
+    res.json({ success: true, ...publicAppConfig() });
+  } catch (err) {
+    console.error("❌ stars-purchase-mode:", err.message);
+    res.status(500).json({ error: "Server xatosi" });
+  }
+});
+
+async function bootstrapTokensAndPurchaseMode() {
+  await ensureTokensTable(pool);
+  await seedFragmentTokensFromEnvIfEmpty(pool);
+  await seedStarsPurchaseModeFromEnvIfMissing(pool);
+  starsPurchaseMode = await getStarsPurchaseModeFromDb(pool);
+}
+
+// ======================
 // run server
 // ======================
 const PORT = process.env.PORT;
 
-// 🚀 Server start - cache ni yuklash
+await bootstrapTokensAndPurchaseMode().catch((err) =>
+  console.error("❌ tokens / purchase mode:", err.message)
+);
+
 loadPendingOrdersToCache().then(() => {
   console.log(`✅ Cache yuklandi: ${globalUsedPrices.size} ta pending order`);
 });
 
-app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log(`💎 Stars purchase mode: ${starsPurchaseMode} (admin panel switch)`);
+});
