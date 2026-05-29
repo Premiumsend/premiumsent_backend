@@ -61,7 +61,13 @@ export function isFragmentCookieError(message) {
   return (
     s.includes("403") ||
     s.includes("cookie") ||
-    s.includes("expired") ||
+    s.includes("cookies") ||
+    s.includes("session may have expired") ||
+    s.includes("session expired") ||
+    s.includes("refresh your cookies") ||
+    s.includes("request id") ||
+    s.includes("request_id") ||
+    s.includes("did not return a request") ||
     s.includes("tokens jadval") ||
     (s.includes("yaroqsiz") && s.includes("cookie")) ||
     (s.includes("eskirgan") && s.includes("cookie"))
@@ -83,6 +89,17 @@ export function isFragmentPythonSetupError(message) {
 export function summarizeFragmentCliError(raw) {
   const text = String(raw || "").trim();
   if (!text) return "Fragment CLI javob bermadi";
+
+  if (
+    /request id/i.test(text) ||
+    /session may have expired/i.test(text) ||
+    /refresh your cookies/i.test(text)
+  ) {
+    return (
+      "Fragment cookie/sessiya eskirgan. Brauzerda fragment.com ga kiring, yangi stel_ssid/stel_token " +
+      "(va TON uchun stel_ton_token) oling, admin Fragment tabga saqlang, npm run fragment:test-cookie → OK, restart."
+    );
+  }
 
   if (/invalid mnemonic/i.test(text)) {
     const m = text.match(/got (\d+)/i);

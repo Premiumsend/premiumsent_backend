@@ -20,7 +20,8 @@ export async function notifyFragmentDeliveryIssue(ctx, order, errMsg, kind = "st
     `@${escapeTelegramHtml(order.recipient_username)} — ${amountLabel}\n` +
     `To'lov: ${order.summ} so'm (qabul qilingan)\n\n` +
     `<pre>${safeErr}</pre>\n\n` +
-    `👉 Cookie: admin Fragment tab. Python: <code>npm run fragment:install</code>`;
+    `👉 Cookie yangilang: fragment.com → DevTools → Cookies (stel_ssid, stel_token, stel_ton_token). ` +
+    `Admin 🍪 Fragment tab → saqlash → Cookie test OK → pm2 restart.`;
 
   if (bot && channelId) {
     try {
