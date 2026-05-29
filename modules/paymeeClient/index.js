@@ -4,6 +4,7 @@ export {
   checkPaymeeHealth,
   verifyPaymeeApiReachable,
   getPaymeeBalance,
+  getPaymeePricing,
   deliverStarsViaPaymeeApi,
   deliverPremiumViaPaymeeApi,
   isPartnerPurchaseSuccess,

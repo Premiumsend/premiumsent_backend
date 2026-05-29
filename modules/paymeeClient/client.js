@@ -22,8 +22,8 @@ function parsePartnerJson(rawText) {
   if (!raw) return {};
   if (looksLikeHtml(raw)) {
     const err = new Error(
-      "Partner API HTML qaytardi (frontend sahifa). STARS_PAYMEE_API_URL provider backend bo'lishi kerak — " +
-        "masalan https://PROVIDER_HOST/api/purchase/v1 (starstg.uz faqat misol, nginx proxy kerak)."
+      "Partner API HTML qaytardi. STARS_PAYMEE_API_URL=https://starspaymee.starstg.uz/api/purchase/v1 " +
+        "bo'lishi kerak (starstg.uz emas — docs-partner-api.md §2.2)."
     );
     err.status = 502;
     err.body = { _html: true, _raw: raw.slice(0, 200) };
@@ -39,8 +39,10 @@ function parsePartnerJson(rawText) {
   }
 }
 
+const PARTNER_FETCH_TIMEOUT_MS = 120_000;
+
 /**
- * StarsPaymee Partner API (docs.md §4)
+ * StarsPaymee Partner API — docs-partner-api.md
  */
 export async function partnerRequest(path, options = {}) {
   const base = getBaseUrl();
@@ -52,11 +54,20 @@ export async function partnerRequest(path, options = {}) {
     throw err;
   }
 
+  if (/starstg\.uz/i.test(base) && !/starspaymee\.starstg\.uz/i.test(base)) {
+    console.warn(
+      "⚠️ STARS_PAYMEE_API_URL starstg.uz ga ishora qiladi — starspaymee.starstg.uz ishlating"
+    );
+  }
+
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const res = await fetch(url, {
     ...options,
+    redirect: "follow",
+    timeout: PARTNER_FETCH_TIMEOUT_MS,
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
       "X-API-Key": apiKey,
       ...(options.headers || {}),
     },
@@ -134,9 +145,13 @@ export async function getPaymeeBalance() {
   return partnerRequest("/balance");
 }
 
+export async function getPaymeePricing() {
+  return partnerRequest("/pricing");
+}
+
 export async function deliverStarsViaPaymeeApi(username, stars, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
-  const key = idempotencyKey || `starsjoy-stars-${orderId}`;
+  const key = idempotencyKey || `paymee-stars-${orderId}`;
   return partnerRequest("/stars", {
     method: "POST",
     body: JSON.stringify({
@@ -149,7 +164,7 @@ export async function deliverStarsViaPaymeeApi(username, stars, orderId, idempot
 
 export async function deliverPremiumViaPaymeeApi(username, months, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
-  const key = idempotencyKey || `starsjoy-premium-${orderId}`;
+  const key = idempotencyKey || `paymee-premium-${orderId}`;
   return partnerRequest("/premium", {
     method: "POST",
     body: JSON.stringify({

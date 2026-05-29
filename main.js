@@ -79,7 +79,7 @@ function validateEnv() {
           } else {
             console.error(`❌ Partner API ulanish XATO (${r.url}): ${r.error}`);
             console.error(
-              "   starstg.uz ko‘pincha faqat frontend — provider backend URL + nginx /api/purchase/ proxy kerak"
+              "   STARS_PAYMEE_API_URL=https://starspaymee.starstg.uz/api/purchase/v1 bo'lishi kerak (docs-partner-api.md)"
             );
           }
         })

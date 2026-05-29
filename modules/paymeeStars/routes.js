@@ -5,6 +5,7 @@ import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 import {
   checkPaymeeHealth,
   getPaymeeBalance,
+  getPaymeePricing,
   paymeeConfigured,
 } from "../paymeeClient/index.js";
 
@@ -86,14 +87,19 @@ export function registerPaymeeStarsRoutes(app, ctx) {
           error: "STARS_PAYMEE_API_URL yoki STARS_PAYMEE_API_KEY yo'q",
         });
       }
-      const [health, balance] = await Promise.all([
+      const apiUrl = process.env.STARS_PAYMEE_API_URL;
+      const [health, balance, pricing] = await Promise.all([
         checkPaymeeHealth().catch((e) => ({ success: false, error: e.message })),
         getPaymeeBalance().catch((e) => ({ success: false, error: e.message })),
+        getPaymeePricing().catch((e) => ({ success: false, error: e.message })),
       ]);
       res.json({
         configured: true,
+        api_url: apiUrl,
+        docs: "https://starspaymee.starstg.uz/api/purchase/v1/docs",
         health,
         balance,
+        pricing,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });

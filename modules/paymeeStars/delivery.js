@@ -44,7 +44,7 @@ export async function sendStarsViaPaymee(order, ctx) {
       data = await deliverStarsViaPaymeeApi(username, stars, orderId);
     } catch (firstErr) {
       if (shouldRetryPaymeePurchase(firstErr)) {
-        const retryKey = `starsjoy-stars-${orderId}-r-${Date.now()}`;
+        const retryKey = `paymee-stars-${orderId}-r-${Date.now()}`;
         console.warn(
           `🔄 Paymee stars #${orderId} qayta urinish (${firstErr.message}) key=${retryKey}`
         );
