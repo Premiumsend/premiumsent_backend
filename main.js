@@ -65,19 +65,27 @@ function validateEnv() {
   console.log(`   PORT=${port} | USDT match: ${process.env.MATCH_API_STARS_USDT ? "bor" : "yo'q"}`);
 }
 
-function validatePythonFragmentDeps() {
-  const py = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
+async function validatePythonFragmentDeps() {
+  const { resolvePythonCommand, venvPythonExists } = await import(
+    "./modules/usdtStars/pythonPath.js"
+  );
+  const py = resolvePythonCommand();
   const r = spawnSync(py, ["-c", "import dotenv"], {
     cwd: __dirname,
     encoding: "utf8",
   });
   if (r.status !== 0) {
     console.error("❌ Python: dotenv moduli yo'q (Fragment stars/premium ishlamaydi)");
-    console.error("   cd backend && pip3 install -r requirements.txt");
-    console.error("   yoki: npm run fragment:install");
+    console.error(`   Python: ${py}`);
+    if (!venvPythonExists()) {
+      console.error("   Ubuntu PEP 668: npm run fragment:install");
+      console.error("   (venv: node scripts/setup-python-venv.mjs)");
+    } else {
+      console.error("   Qayta: npm run fragment:install");
+    }
     return false;
   }
-  console.log("✅ Python dotenv tayyor (Fragment CLI)");
+  console.log(`✅ Python Fragment tayyor: ${py}`);
   return true;
 }
 
@@ -162,7 +170,7 @@ process.on("SIGTERM", () => shutdownAll("SIGTERM"));
 // Ishga tushirish
 // =============================
 validateEnv();
-validatePythonFragmentDeps();
+await validatePythonFragmentDeps();
 await runCleanup();
 
 console.log("\n🔥 StarsJoy backend — parallel ishga tushmoqda\n");

@@ -45,3 +45,6 @@ coverage/
 tmp/
 temp/
 .env
+
+# Python venv (Fragment / pyfragment)
+.venv/

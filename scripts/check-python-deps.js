@@ -5,9 +5,11 @@
 import { spawnSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { resolvePythonCommand } from "../modules/usdtStars/pythonPath.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const py = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
+const py = resolvePythonCommand();
+console.log("Python:", py);
 
 const modules = ["dotenv", "socks", "psycopg2", "pyfragment"];
 const missing = [];
@@ -27,8 +29,8 @@ for (const mod of modules) {
 }
 
 if (missing.length) {
-  console.error("\n👉 O'rnatish: pip3 install -r requirements.txt");
-  console.error("   yoki: npm run fragment:install");
+  console.error("\n👉 O'rnatish: npm run fragment:install");
+  console.error("   (Ubuntu: node scripts/setup-python-venv.mjs)");
   process.exit(1);
 }
 

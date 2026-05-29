@@ -20,7 +20,7 @@ export async function notifyFragmentDeliveryIssue(ctx, order, errMsg, kind = "st
     `@${escapeTelegramHtml(order.recipient_username)} — ${amountLabel}\n` +
     `To'lov: ${order.summ} so'm (qabul qilingan)\n\n` +
     `<pre>${safeErr}</pre>\n\n` +
-    `👉 Cookie: admin Fragment tab. Python: <code>pip3 install -r requirements.txt</code>`;
+    `👉 Cookie: admin Fragment tab. Python: <code>npm run fragment:install</code>`;
 
   if (bot && channelId) {
     try {

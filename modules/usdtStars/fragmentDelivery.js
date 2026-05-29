@@ -15,8 +15,10 @@ import {
   normalizeFragmentPaymentMethod,
 } from "../settings/settingsDb.js";
 import { fragmentFetch, describeFragmentProxy } from "./fragmentProxy.js";
+import { resolvePythonCommand } from "./pythonPath.js";
 
 export { describeFragmentProxy };
+export { resolvePythonCommand };
 
 async function resolveFragmentPaymentMethod(pool, getFragmentPaymentMethod) {
   if (typeof getFragmentPaymentMethod === "function") {
@@ -32,7 +34,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.join(__dirname, "fragment_cli.py");
 
 function pythonCommand() {
-  return process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
+  return resolvePythonCommand();
 }
 
 function hasWalletEnv() {
@@ -71,11 +73,11 @@ export function summarizeFragmentCliError(raw) {
   const modMatch = text.match(/No module named ['"]([^'"]+)['"]/i);
   if (modMatch) {
     const mod = modMatch[1];
-    return `Python moduli yo'q: ${mod}. VPS: cd backend && pip3 install -r requirements.txt`;
+    return `Python moduli yo'q: ${mod}. VPS: cd backend && npm run fragment:install`;
   }
 
   if (text.includes("ModuleNotFoundError")) {
-    return "Python kutubxonasi o'rnatilmagan. Ishga tushiring: pip3 install -r requirements.txt";
+    return "Python kutubxonasi o'rnatilmagan. Ishga tushiring: npm run fragment:install";
   }
 
   try {
