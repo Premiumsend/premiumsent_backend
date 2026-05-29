@@ -35,14 +35,52 @@ export async function partnerRequest(path, options = {}) {
     },
   });
 
-  const data = await res.json().catch(() => ({}));
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = { _raw: rawText?.slice(0, 300) };
+  }
+
   if (!res.ok) {
-    const err = new Error(data.error || `HTTP ${res.status}`);
+    const err = new Error(
+      data.error || data.message || `HTTP ${res.status}${data._raw ? ` — ${data._raw}` : ""}`
+    );
     err.status = res.status;
     err.body = data;
+    console.error(`❌ Paymee API ${res.status} ${path}:`, JSON.stringify(data).slice(0, 500));
     throw err;
   }
+
+  if (data.success === false) {
+    const err = new Error(
+      data.error ||
+        data.error_message ||
+        `Partner status=${data.status || "failed"} (order_id=${data.order_id ?? "?"})`
+    );
+    err.status = res.status;
+    err.body = data;
+    console.error(`❌ Paymee API 200 success=false ${path}:`, JSON.stringify(data).slice(0, 500));
+    throw err;
+  }
+
   return data;
+}
+
+/** Muvaffaqiyat: success:true yoki completed + transaction_id */
+export function isPartnerPurchaseSuccess(data) {
+  if (!data || typeof data !== "object") return false;
+  if (data.success === true) return true;
+  if (data.status === "completed" && data.transaction_id) return true;
+  return false;
+}
+
+export function shouldRetryPaymeePurchase(err) {
+  if (!err) return false;
+  if (err.status === 502 || err.status === 500) return true;
+  if (err.status === 200 && err.body?.status === "failed") return true;
+  return false;
 }
 
 export async function checkPaymeeHealth() {
@@ -53,26 +91,28 @@ export async function getPaymeeBalance() {
   return partnerRequest("/balance");
 }
 
-export async function deliverStarsViaPaymeeApi(username, stars, orderId) {
+export async function deliverStarsViaPaymeeApi(username, stars, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
+  const key = idempotencyKey || `starsjoy-stars-${orderId}`;
   return partnerRequest("/stars", {
     method: "POST",
     body: JSON.stringify({
       username: clean,
       stars: Number(stars),
-      idempotency_key: `starsjoy-stars-${orderId}`,
+      idempotency_key: key,
     }),
   });
 }
 
-export async function deliverPremiumViaPaymeeApi(username, months, orderId) {
+export async function deliverPremiumViaPaymeeApi(username, months, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
+  const key = idempotencyKey || `starsjoy-premium-${orderId}`;
   return partnerRequest("/premium", {
     method: "POST",
     body: JSON.stringify({
       username: clean,
       months: Number(months),
-      idempotency_key: `starsjoy-premium-${orderId}`,
+      idempotency_key: key,
     }),
   });
 }

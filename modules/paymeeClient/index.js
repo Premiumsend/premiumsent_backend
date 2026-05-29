@@ -5,6 +5,8 @@ export {
   getPaymeeBalance,
   deliverStarsViaPaymeeApi,
   deliverPremiumViaPaymeeApi,
+  isPartnerPurchaseSuccess,
+  shouldRetryPaymeePurchase,
   isPaymeeBalanceError,
   isPaymeeConfigError,
   isPaymeeRetryableError,

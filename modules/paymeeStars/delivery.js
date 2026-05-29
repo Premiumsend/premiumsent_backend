@@ -1,8 +1,10 @@
 import {
   deliverStarsViaPaymeeApi,
+  isPartnerPurchaseSuccess,
   isPaymeeBalanceError,
   isPaymeeConfigError,
   isPaymeeRetryableError,
+  shouldRetryPaymeePurchase,
   paymeeConfigured,
 } from "../paymeeClient/index.js";
 import { paymeeSlotKey } from "./orderCreate.js";
@@ -37,10 +39,25 @@ export async function sendStarsViaPaymee(order, ctx) {
   console.log("🔹 sendStarsViaPaymee:", { orderId, username, stars });
 
   try {
-    const data = await deliverStarsViaPaymeeApi(username, stars, orderId);
+    let data;
+    try {
+      data = await deliverStarsViaPaymeeApi(username, stars, orderId);
+    } catch (firstErr) {
+      if (shouldRetryPaymeePurchase(firstErr)) {
+        const retryKey = `starsjoy-stars-${orderId}-r-${Date.now()}`;
+        console.warn(
+          `🔄 Paymee stars #${orderId} qayta urinish (${firstErr.message}) key=${retryKey}`
+        );
+        data = await deliverStarsViaPaymeeApi(username, stars, orderId, retryKey);
+      } else {
+        throw firstErr;
+      }
+    }
 
-    if (!data?.success) {
-      throw new Error(data?.error || "Paymee API xatosi");
+    if (!isPartnerPurchaseSuccess(data)) {
+      throw new Error(
+        data?.error || `Paymee javob noto'g'ri: ${JSON.stringify(data).slice(0, 200)}`
+      );
     }
 
     const txId = data.transaction_id || `paymee_${orderId}_${Date.now()}`;
@@ -60,6 +77,11 @@ export async function sendStarsViaPaymee(order, ctx) {
     return { success: true, transaction_id: txId };
   } catch (err) {
     const errMsg = err.message || String(err);
+    console.error(
+      `❌ Paymee stars #${orderId} (@${username}, ${stars}⭐):`,
+      errMsg,
+      err.body ? JSON.stringify(err.body).slice(0, 400) : ""
+    );
 
     if (isPaymeeBalanceError(err) || isPaymeeConfigError(err) || isPaymeeRetryableError(err)) {
       await pool.query(
