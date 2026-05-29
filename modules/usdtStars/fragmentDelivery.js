@@ -273,19 +273,41 @@ export async function verifyFragmentCookies(pool) {
   };
 
   const httpResult = await verifyFragmentCookiesHttp(tokens);
-  const merged = { ...httpResult, diagnostics };
-
-  if (httpResult.ok) {
-    return merged;
-  }
-
-  // Fallback: Python (psycopg2 kerak bo'lishi mumkin)
   const env = fragmentTokensToProcessEnv(process.env, tokens);
   const pyResult = await runFragmentCli(["--verify-cookies"], env);
-  if (pyResult.ok) {
-    return { ...pyResult, diagnostics };
+
+  const merged = {
+    ...httpResult,
+    diagnostics,
+    http_check: { ok: httpResult.ok, status: httpResult.status },
+    pyfragment_check: {
+      ok: Boolean(pyResult.ok),
+      error: pyResult.error || pyResult.stderr || null,
+    },
+    ok: Boolean(httpResult.ok && pyResult.ok),
+  };
+
+  if (httpResult.ok && !pyResult.ok) {
+    merged.warning =
+      "HTTP 200 (sahifa ochiladi), lekin pyfragment sessiyasi xato — stars sotib olish ishlamasligi mumkin. Cookie yangilang.";
+    merged.hints = [
+      "fragment.com da stars/buy sahifasida yangi cookie oling (stel_ton_token bilan).",
+      "npm run fragment:verify",
+      "Hamyonda yetarli TON borligini tekshiring.",
+    ];
   }
+
   return merged;
+}
+
+/** CLI --verify-cookies (pyfragment sessiya) */
+export async function runFragmentPythonCookieVerify(tokens, paymentMethod) {
+  const env = fragmentTokensToProcessEnv(
+    process.env,
+    tokens,
+    paymentMethod || "ton"
+  );
+  return runFragmentCli(["--verify-cookies"], env);
 }
 
 export async function buyStarsViaFragment(recipientUsername, amount, pool, opts = {}) {

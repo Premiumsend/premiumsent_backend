@@ -7,9 +7,12 @@ import {
   getFragmentEnvDiagnostics,
   resolveFragmentTokens,
 } from "../tokens/tokensDb.js";
-import { verifyFragmentCookiesHttp } from "./fragmentDelivery.js";
+import {
+  verifyFragmentCookiesHttp,
+  runFragmentPythonCookieVerify,
+} from "./fragmentDelivery.js";
 import { describeFragmentProxy } from "./fragmentProxy.js";
-import { walletEnvDiagnostics } from "./walletEnv.js";
+import { walletEnvDiagnostics, validateFragmentWalletEnv } from "./walletEnv.js";
 
 export function checkTorPort9050(timeoutMs = 3000) {
   return new Promise((resolve) => {
@@ -45,9 +48,48 @@ export async function runFragmentCookieTest(pool, opts = {}) {
   }
 
   const httpResult = await verifyFragmentCookiesHttp(tokens);
+  const wallet = walletEnvDiagnostics();
+  const walletCheck = validateFragmentWalletEnv();
+
+  let pyfragment_check = { ok: null, skipped: true, error: null };
+  if (walletCheck.ok) {
+    const pyResult = await runFragmentPythonCookieVerify(tokens);
+    pyfragment_check = {
+      ok: Boolean(pyResult.ok),
+      skipped: false,
+      error: pyResult.error || pyResult.stderr || null,
+    };
+  } else {
+    pyfragment_check = {
+      ok: false,
+      skipped: true,
+      error: walletCheck.error,
+    };
+  }
+
+  const httpOk = Boolean(httpResult.ok);
+  const pyOk = pyfragment_check.ok === true;
+  const purchase_ready = httpOk && pyOk && wallet.wallet_ready;
+
+  const hints = [];
+  if (httpOk && !pyOk) {
+    hints.push(
+      "HTTP 200 — sahifa ochiladi, lekin pyfragment sessiya yaroqsiz. fragment.com da qayta login, yangi cookie."
+    );
+  }
+  if (wallet.wallet_ready && httpOk && pyOk) {
+    hints.push("Tekshiruv OK. Agar sotib olish xato bersa — hamyonda TON balans va API_KEY ni tekshiring.");
+  }
+  if (!wallet.wallet_ready) {
+    hints.push("SEED (12/18/24 so'z) va API_KEY .env da to'g'ri bo'lishi kerak.");
+  }
 
   return {
-    ok: Boolean(httpResult.ok),
+    ok: purchase_ready,
+    purchase_ready,
+    http_check: { ok: httpOk, status: httpResult.status, error: httpResult.error },
+    pyfragment_check,
+    wallet,
     ...httpResult,
     token_source: tokenSource,
     token_fingerprint: fragmentTokenFingerprint(tokens),
@@ -56,6 +98,9 @@ export async function runFragmentCookieTest(pool, opts = {}) {
     proxy,
     tor_port_9050,
     host: os.hostname(),
+    hints,
+    note:
+      "fragment:test-cookie faqat GET sahifani tekshiradi; pyfragment_check — haqiqiy sotib olish sessiyasi.",
   };
 }
 
