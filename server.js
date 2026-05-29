@@ -486,7 +486,7 @@ function removePriceFromCache(price) {
 // Order ID bo'yicha cache dan o'chirish
 function removePriceFromCacheByOrderId(orderId) {
   for (const [price, data] of globalUsedPrices.entries()) {
-    if (data.orderId === orderId) {
+    if (orderIdsEqual(data.orderId, orderId)) {
       globalUsedPrices.delete(price);
       return price;
     }
@@ -497,6 +497,118 @@ function removePriceFromCacheByOrderId(orderId) {
 // Narx band yoki yo'qligini tekshirish (O(1) tezlik)
 function isPriceUsed(price) {
   return globalUsedPrices.has(price);
+}
+
+function orderIdsEqual(a, b) {
+  return a != null && b != null && String(a) === String(b);
+}
+
+/** Barcha pending summ (stars/gift/premium) — narx conflict */
+async function fetchPendingConflictPrices(db = pool) {
+  const result = await db.query(
+    `SELECT DISTINCT summ FROM orders
+     WHERE order_type IN ('stars', 'stars_usdt', 'stars_paymee', 'gift', 'premium', 'premium_usdt', 'premium_paymee')
+       AND status = 'pending' AND payment_status = 'pending'
+       AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'`
+  );
+  return new Set(result.rows.map((r) => r.summ));
+}
+
+/**
+ * Stars slot + globalUsedPrices ni bazaga sinxronlash.
+ * To'lanmagan / expired orderlar band qilgan narxlarni bo'shatadi.
+ */
+async function syncStarsPriceSlotsAndCache() {
+  try {
+    const pendingOrders = await pool.query(
+      `SELECT id, summ, order_type, type_amount, created_at, applied_promocode FROM orders
+       WHERE status = 'pending' AND payment_status = 'pending'
+       AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'
+       AND order_type IN ('stars', 'stars_usdt', 'stars_paymee', 'gift', 'premium', 'premium_usdt', 'premium_paymee')`
+    );
+
+    const pendingOrderIds = new Set(pendingOrders.rows.map((r) => String(r.id)));
+    const dbPrices = new Set(pendingOrders.rows.map((r) => r.summ));
+    const now = Date.now();
+
+    for (const [price, data] of globalUsedPrices.entries()) {
+      const oid = data?.orderId;
+      if (typeof oid === "string" && oid.startsWith("db_ghost_")) {
+        if (!dbPrices.has(price)) globalUsedPrices.delete(price);
+        continue;
+      }
+      if (!dbPrices.has(price)) {
+        globalUsedPrices.delete(price);
+        continue;
+      }
+      if (oid != null && !pendingOrderIds.has(String(oid)) && !String(oid).startsWith("temp_")) {
+        globalUsedPrices.delete(price);
+      }
+    }
+
+    for (const key in priceSlots) {
+      if (!/^\d+$/.test(key)) continue;
+      const slots = priceSlots[key];
+      for (const slotIndex in slots) {
+        const slot = slots[slotIndex];
+        if (!slot) continue;
+        const elapsed = now - slot.createdAt;
+        const oid = slot.orderId;
+        const isTemp = typeof oid === "string" && oid.startsWith("temp_");
+        const inDb = !isTemp && pendingOrderIds.has(String(oid));
+
+        if (elapsed > PRICE_SLOT_CONFIG.SLOT_TIMEOUT) {
+          removePriceFromCacheByOrderId(oid);
+          delete slots[slotIndex];
+          if (inDb) {
+            const expired = await pool.query(
+              `UPDATE orders SET status='expired', payment_status='expired'
+               WHERE id=$1 AND status='pending' AND payment_status='pending'
+               RETURNING applied_promocode`,
+              [oid]
+            );
+            if (expired.rows[0]?.applied_promocode) {
+              await releasePromocodeUsage(pool, expired.rows[0].applied_promocode);
+            }
+          }
+          continue;
+        }
+
+        if (!inDb && !isTemp) {
+          removePriceFromCacheByOrderId(oid);
+          delete slots[slotIndex];
+        } else if (isTemp && elapsed > 2 * 60 * 1000) {
+          removePriceFromCacheByOrderId(oid);
+          delete slots[slotIndex];
+        }
+      }
+      if (Object.keys(slots).length === 0) delete priceSlots[key];
+    }
+
+    for (const order of pendingOrders.rows) {
+      if (order.order_type === "stars" && order.type_amount) {
+        const starsAmount = String(order.type_amount);
+        const maxPrice = order.type_amount * STARS_PRICE_PER_UNIT;
+        const diff = maxPrice - order.summ;
+        let slotIndex = -1;
+        if (diff >= 0 && diff <= 950 && diff % 50 === 0) slotIndex = diff / 50;
+        if (slotIndex >= 0 && slotIndex < PRICE_SLOT_CONFIG.MAX_SLOTS) {
+          if (!priceSlots[starsAmount]) priceSlots[starsAmount] = {};
+          if (!priceSlots[starsAmount][slotIndex]) {
+            priceSlots[starsAmount][slotIndex] = {
+              orderId: order.id,
+              createdAt: new Date(order.created_at).getTime(),
+            };
+          }
+        }
+      }
+      if (!globalUsedPrices.has(order.summ)) {
+        addPriceToCache(order.summ, order.id, order.order_type);
+      }
+    }
+  } catch (err) {
+    console.error("❌ syncStarsPriceSlotsAndCache:", err.message);
+  }
 }
 
 // ======================
@@ -572,102 +684,52 @@ Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
 }, 60 * 1000); // Har 1 daqiqa
 
 // ======================
-// 🧹 DEEP CACHE SYNC - Har 1 soatda (slot sinxronizatsiya)
+// 🧹 Stars narx keshi — har 2 daqiqada + slot sinxron
 // ======================
+setInterval(() => {
+  syncStarsPriceSlotsAndCache();
+}, 2 * 60 * 1000);
+
 setInterval(async () => {
   try {
-    // Bazadan haqiqiy pending orderlarni olish (faqat oxirgi 5 daqiqadagi)
-    const result = await pool.query(
-      "SELECT summ FROM orders WHERE status = 'pending' AND payment_status = 'pending' AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'"
-    );
-    
-    const dbPrices = new Set(result.rows.map(r => r.summ));
-    
-    // Cache da bor lekin bazada yo'q narxlarni o'chirish
-    for (const [price] of globalUsedPrices.entries()) {
-      if (!dbPrices.has(price)) {
-        globalUsedPrices.delete(price);
-      }
-    }
-
-    // ===== SLOT CACHE SINXRONIZATSIYASI =====
-    // Bazadan barcha pending orderlarni olish (slotlarni sinxronlash uchun)
     const pendingOrders = await pool.query(
       "SELECT id, order_type, type_amount FROM orders WHERE status = 'pending' AND payment_status = 'pending' AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'"
     );
-    
-    const pendingOrderIds = new Set(pendingOrders.rows.map(r => r.id));
-    
-    // 1. priceSlots (Stars) - bazada yo'q orderlarni tozalash
-    for (const starsAmount in priceSlots) {
-      const slots = priceSlots[starsAmount];
-      for (const slotIndex in slots) {
-        if (!pendingOrderIds.has(slots[slotIndex].orderId)) {
-          console.log(`🧹 Stars ${starsAmount} - Slot ${slotIndex} sinxronlandi (bazada yo'q): orderId=${slots[slotIndex].orderId}`);
-          delete slots[slotIndex];
-        }
-      }
-      // Bo'sh poollarni o'chirish
-      if (Object.keys(slots).length === 0) {
-        delete priceSlots[starsAmount];
-      }
-    }
-    
-    // 2. discountPriceSlots - bazada yo'q orderlarni tozalash
+    const pendingOrderIds = new Set(pendingOrders.rows.map((r) => String(r.id)));
+
     for (const packageId in discountPriceSlots) {
       const slots = discountPriceSlots[packageId];
       for (const slotIndex in slots) {
-        if (!pendingOrderIds.has(slots[slotIndex].orderId)) {
-          console.log(`🧹 Discount ${packageId} - Slot ${slotIndex} sinxronlandi (bazada yo'q): orderId=${slots[slotIndex].orderId}`);
+        if (!pendingOrderIds.has(String(slots[slotIndex].orderId))) {
           delete slots[slotIndex];
         }
       }
-      if (Object.keys(slots).length === 0) {
-        delete discountPriceSlots[packageId];
-      }
+      if (Object.keys(slots).length === 0) delete discountPriceSlots[packageId];
     }
-    
-    // 3. premiumPriceSlots - bazada yo'q orderlarni tozalash
+
     for (const months in premiumPriceSlots) {
       const slots = premiumPriceSlots[months];
       for (const slotIndex in slots) {
-        if (!pendingOrderIds.has(slots[slotIndex].orderId)) {
-          console.log(`🧹 Premium ${months}m - Slot ${slotIndex} sinxronlandi (bazada yo'q): orderId=${slots[slotIndex].orderId}`);
+        if (!pendingOrderIds.has(String(slots[slotIndex].orderId))) {
           delete slots[slotIndex];
         }
       }
-      if (Object.keys(slots).length === 0) {
-        delete premiumPriceSlots[months];
-      }
+      if (Object.keys(slots).length === 0) delete premiumPriceSlots[months];
     }
-    
-    // 4. giftPriceSlots - bazada yo'q orderlarni tozalash
+
     for (const giftStars in giftPriceSlots) {
       const slots = giftPriceSlots[giftStars];
       for (const slotIndex in slots) {
-        if (!pendingOrderIds.has(slots[slotIndex].orderId)) {
-          console.log(`🧹 Gift ${giftStars}⭐ - Slot ${slotIndex} sinxronlandi (bazada yo'q): orderId=${slots[slotIndex].orderId}`);
+        if (!pendingOrderIds.has(String(slots[slotIndex].orderId))) {
           delete slots[slotIndex];
         }
       }
-      if (Object.keys(slots).length === 0) {
-        delete giftPriceSlots[giftStars];
-      }
-    }
-
-    // Cache holati haqida log
-    const totalStarsSlots = Object.values(priceSlots).reduce((sum, slots) => sum + Object.keys(slots).length, 0);
-    const totalDiscountSlots = Object.values(discountPriceSlots).reduce((sum, slots) => sum + Object.keys(slots).length, 0);
-    const totalPremiumSlots = Object.values(premiumPriceSlots).reduce((sum, slots) => sum + Object.keys(slots).length, 0);
-    const totalGiftSlots = Object.values(giftPriceSlots).reduce((sum, slots) => sum + Object.keys(slots).length, 0);
-    
-    if (totalStarsSlots > 0 || totalDiscountSlots > 0 || totalPremiumSlots > 0 || totalGiftSlots > 0) {
-      console.log(`📊 Cache holati: Stars=${totalStarsSlots}, Discount=${totalDiscountSlots}, Premium=${totalPremiumSlots}, Gift=${totalGiftSlots} slot(lar)`);
+      if (Object.keys(slots).length === 0) delete giftPriceSlots[giftStars];
     }
   } catch (err) {
-    console.error('❌ Cache tozalashda xato:', err.message);
+    console.error("❌ Discount/Premium/Gift slot sync:", err.message);
   }
-}, 60 * 60 * 1000); // Har 1 soat
+}, 2 * 60 * 1000);
 
 // ======================
 // 🎯 PRICE SLOT SYSTEM - Dinamik narx tizimi (Stars * NARX so'm)
@@ -778,7 +840,7 @@ function releasePriceSlotByOrderId(orderId, starsAmount = null) {
     const slots = priceSlots[key];
     if (slots) {
       for (const slotIndex in slots) {
-        if (slots[slotIndex].orderId === orderId) {
+        if (orderIdsEqual(slots[slotIndex].orderId, orderId)) {
           console.log(`🔓 Stars ${starsAmount} - Slot ${slotIndex} bo'shatildi: orderId=${orderId}`);
           delete slots[slotIndex];
           return true;
@@ -792,7 +854,7 @@ function releasePriceSlotByOrderId(orderId, starsAmount = null) {
   for (const key in priceSlots) {
     const slots = priceSlots[key];
     for (const slotIndex in slots) {
-      if (slots[slotIndex].orderId === orderId) {
+      if (orderIdsEqual(slots[slotIndex].orderId, orderId)) {
         console.log(`🔓 Stars ${key} - Slot ${slotIndex} bo'shatildi: orderId=${orderId}`);
         delete slots[slotIndex];
         return true;
@@ -2248,41 +2310,31 @@ app.get("/api/stars/price/:stars", async (req, res) => {
     return res.status(400).json({ error: "Stars 50 dan 10000 gacha bo'lishi kerak" });
   }
   
-  // 🛡️ Gift/Premium pending orderlar narxlarini olish (conflict uchun)
+  await syncStarsPriceSlotsAndCache();
+
   let conflictPrices = new Set();
   try {
-    const giftPremiumPrices = await pool.query(
-      `SELECT DISTINCT summ FROM orders 
-       WHERE order_type IN ('gift', 'premium') 
-       AND status = 'pending' AND payment_status = 'pending'
-       AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'`
-    );
-    conflictPrices = new Set(giftPremiumPrices.rows.map(r => r.summ));
+    conflictPrices = await fetchPendingConflictPrices();
   } catch (err) {
-    console.error('⚠️ Conflict prices olishda xato:', err.message);
+    console.error("⚠️ Conflict prices olishda xato:", err.message);
   }
-  
-  // Bo'sh slot topish (conflict tekshirish bilan)
+
+  const key = String(stars);
+  if (!priceSlots[key]) priceSlots[key] = {};
+
   let slotIndex = -1;
   for (let i = 0; i < PRICE_SLOT_CONFIG.MAX_SLOTS; i++) {
-    const baseSlot = getAvailablePriceSlot(stars);
-    if (baseSlot === -1) break;
-    
-    // Slotni tekshirish
-    const key = String(stars);
-    if (priceSlots[key] && priceSlots[key][i]) {
+    if (priceSlots[key][i]) {
       const elapsed = Date.now() - priceSlots[key][i].createdAt;
-      if (elapsed <= PRICE_SLOT_CONFIG.SLOT_TIMEOUT) {
-        continue; // Slot band
-      }
+      if (elapsed <= PRICE_SLOT_CONFIG.SLOT_TIMEOUT) continue;
+      const oid = priceSlots[key][i].orderId;
+      removePriceFromCacheByOrderId(oid);
+      delete priceSlots[key][i];
     }
-    
-    // Bo'sh slot, narxni tekshirish
+
     const candidatePrice = calculateSlotPrice(stars, i);
-    if (conflictPrices.has(candidatePrice)) {
-      continue; // Gift/Premium bilan conflict
-    }
-    
+    if (conflictPrices.has(candidatePrice) || isPriceUsed(candidatePrice)) continue;
+
     slotIndex = i;
     break;
   }
@@ -2656,73 +2708,36 @@ app.post("/api/order", orderLimiter, telegramAuth, async (req, res) => {
     let priceSlotIndex = -1;
     
     if (!useDiscountSlot) {
-      // 🛡️ Slot tizimi - har bir stars miqdori uchun alohida 20 ta slot
-      // Har bir slot unique narx beradi (-50 so'm step)
-      
-      // Avval priceSlots ni bazadan sinxronlashtirish
+      await syncStarsPriceSlotsAndCache();
+
       if (!priceSlots[String(starsNum)]) {
         priceSlots[String(starsNum)] = {};
       }
-      
-      // Bazadagi pending orderlarni tekshirish va slot tizimiga yuklash
-      const pendingOrders = await pool.query(
-        `SELECT id, summ, created_at FROM orders 
-         WHERE order_type = 'stars' AND type_amount = $1 
-         AND status = 'pending' AND payment_status = 'pending'
-         AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'`,
-        [starsNum]
-      );
-      
-      // Bazadagi pending orderlar uchun slotlarni band qilish (yangi formula)
-      for (const order of pendingOrders.rows) {
-        const maxPrice = starsNum * STARS_PRICE_PER_UNIT;
-        const diff = maxPrice - order.summ;
-        
-        // Yangi formula: diff = slotIndex * 50
-        let slotIdx = -1;
-        if (diff >= 0 && diff <= 950 && diff % 50 === 0) {
-          slotIdx = diff / 50;
-        }
-        
-        if (slotIdx >= 0 && slotIdx < 20 && !priceSlots[String(starsNum)][slotIdx]) {
-          priceSlots[String(starsNum)][slotIdx] = {
-            orderId: order.id,
-            createdAt: new Date(order.created_at).getTime()
-          };
-        }
-      }
-      
-      // 🛡️ Gift/Premium pending orderlar narxlarini olish (conflict uchun)
-      const giftPremiumPrices = await pool.query(
-        `SELECT DISTINCT summ FROM orders 
-         WHERE order_type IN ('gift', 'premium') 
-         AND status = 'pending' AND payment_status = 'pending'
-         AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '8 minutes'`
-      );
-      const conflictPrices = new Set(giftPremiumPrices.rows.map(r => r.summ));
-      
-      // Bo'sh slot topish (Gift/Premium bilan conflict tekshirish bilan)
+
+      const conflictPrices = await fetchPendingConflictPrices();
+
       for (let i = 0; i < PRICE_SLOT_CONFIG.MAX_SLOTS; i++) {
-        // Slot band bo'lsa, tekshirish
         if (priceSlots[String(starsNum)][i]) {
           const elapsed = Date.now() - priceSlots[String(starsNum)][i].createdAt;
           if (elapsed <= PRICE_SLOT_CONFIG.SLOT_TIMEOUT) {
-            continue; // Slot hali band
+            continue;
           }
-          // Expired slot - tozalash
+          const oid = priceSlots[String(starsNum)][i].orderId;
+          removePriceFromCacheByOrderId(oid);
           delete priceSlots[String(starsNum)][i];
         }
-        
-        // Bo'sh slot topildi, narxni hisoblash
+
         const candidatePrice = calculateSlotPrice(starsNum, i);
-        
-        // 🛡️ Gift/Premium pending orderlar bilan conflict tekshirish
+
         if (conflictPrices.has(candidatePrice)) {
-          console.log(`⚠️ Slot ${i} skip: ${candidatePrice} so'm Gift/Premium bilan conflict`);
-          continue; // Bu slotni o'tkazib yuborish
+          console.log(`⚠️ Slot ${i} skip: ${candidatePrice} so'm pending conflict`);
+          continue;
         }
-        
-        // Bo'sh va conflict yo'q slot topildi
+        if (isPriceUsed(candidatePrice)) {
+          console.log(`⚠️ Slot ${i} skip: ${candidatePrice} so'm keshda band`);
+          continue;
+        }
+
         priceSlotIndex = i;
         amount = candidatePrice;
         break;
@@ -2876,11 +2891,10 @@ app.post("/api/order", orderLimiter, telegramAuth, async (req, res) => {
     } catch (e) {
       console.log('⚠️ Balance checker ga ulanib bo\'lmadi');
     }
-    // 20 daqiqadan keyin expired
     setTimeout(async () => {
       try {
         const check = await pool.query(
-          "SELECT status, order_type, type_amount, owner_user_id, expired_notified FROM orders WHERE id = $1",
+          "SELECT status, order_type, type_amount, owner_user_id, expired_notified, applied_promocode FROM orders WHERE id = $1",
           [order.id]
         );
         if (check.rows[0]?.status === "pending") {
@@ -2888,14 +2902,16 @@ app.post("/api/order", orderLimiter, telegramAuth, async (req, res) => {
             "UPDATE orders SET status='expired', payment_status='expired' WHERE id=$1",
             [order.id]
           );
+
+          if (check.rows[0]?.applied_promocode) {
+            await releasePromocodeUsage(pool, check.rows[0].applied_promocode);
+          }
           
-          // 🎯 Slotni bo'shatish (stars va discount)
           if (check.rows[0]?.order_type === 'stars') {
-            releasePriceSlotByOrderId(order.id);
+            releasePriceSlotByOrderId(order.id, check.rows[0]?.type_amount);
             releaseDiscountPriceSlotByOrderId(order.id);
           }
           
-          // 🔄 Cache dan o'chirish
           removePriceFromCacheByOrderId(order.id);
           
           console.log(`⏰ Order #${order.id} expired`);
@@ -2924,7 +2940,7 @@ Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
       } catch (e) {
         console.error("❌ Expiry tekshirishda xato:", e);
       }
-    }, 5 * 60 * 1000);
+    }, PRICE_SLOT_CONFIG.SLOT_TIMEOUT);
     // Backward compatible response
     res.json({
       id: order.id,
@@ -6487,10 +6503,8 @@ async function generateUniqueOrderSum(baseAmount, client) {
     if (finalCheck.rows.length === 0) {
       selectedSum = candidate;
       break;
-    } else {
-      // Agar bazada topilib, lekin cache'da yo'q bo'lsa, xavfsizlik uchun cache'ni yangilaymiz
-      addPriceToCache(candidate, 'db_ghost_' + Date.now(), 'temp');
     }
+    addPriceToCache(candidate, finalCheck.rows[0].id, "pending_db");
   }
 
   if (selectedSum === null) {
@@ -7462,9 +7476,11 @@ await bootstrapAppData().catch((err) =>
   console.error("❌ bootstrap xatosi:", err.message)
 );
 
-loadPendingOrdersToCache().then(() => {
-  console.log(`✅ Cache yuklandi: ${globalUsedPrices.size} ta pending order`);
-});
+loadPendingOrdersToCache()
+  .then(() => syncStarsPriceSlotsAndCache())
+  .then(() => {
+    console.log(`✅ Cache yuklandi: ${globalUsedPrices.size} ta pending order`);
+  });
 
 app.listen(PORT, () => {
   const s = getCachedSettings();
