@@ -20,10 +20,12 @@ import {
 import {
   ensureTokensTable,
   seedFragmentTokensFromEnvIfEmpty,
-  getStarsPurchaseModeFromDb,
-  setStarsPurchaseModeInDb,
-  seedStarsPurchaseModeFromEnvIfMissing,
 } from "./modules/tokens/tokensDb.js";
+import {
+  bootstrapSettings,
+  getCachedSettings,
+  registerSettingsRoutes,
+} from "./modules/settings/index.js";
 dotenv.config();
 const { Pool } = pkg;
 const app = express();
@@ -1326,23 +1328,6 @@ async function sendManualPremiumSoldChannelMessage(order, plan, adminUser) {
     console.error('❌ Manual premium orders channel:', err.message);
   }
 }
-// ======================
-// 🔧 MAINTENANCE MODE (texnik ishlar rejimi)
-// ======================
-let maintenanceMode = false;
-app.get("/api/maintenance", (req, res) => {
-  res.json({ maintenance: maintenanceMode });
-});
-app.post("/api/admin/maintenance", adminAuth, (req, res) => {
-  const { enabled } = req.body;
-  if (typeof enabled !== 'boolean') {
-    return res.status(400).json({ error: "enabled (true/false) kerak" });
-  }
-  maintenanceMode = enabled;
-  console.log(`🔧 Maintenance mode: ${enabled ? 'YOQILDI ⛔' : 'O\'CHIRILDI ✅'}`);
-  res.json({ success: true, maintenance: maintenanceMode });
-});
-
 // ======================
 // 📢 BROADCAST — Barcha foydalanuvchilarga xabar yuborish (Bot API)
 // ======================
@@ -3057,6 +3042,7 @@ app.post("/api/admin/stars/send/:id", adminAuth, async (req, res) => {
         removePriceFromCacheByOrderId,
         sendUnifiedChannelNotification,
         usdtSlotKey,
+        getFragmentPaymentMethod,
       });
       return res.json({
         success: true,
@@ -4047,6 +4033,7 @@ app.post("/api/admin/premium/resend/:id", adminAuth, async (req, res) => {
         removePriceFromCacheByOrderId,
         sendUnifiedChannelNotification,
         processPremiumReferralBonusByUserId,
+        getFragmentPaymentMethod,
       });
       return res.json({ success: true, message: "Fragment orqali premium yuborildi", result: tx });
     }
@@ -7313,17 +7300,8 @@ app.get("/api/debug/slots", adminAuth, async (req, res) => {
 // ======================
 // Fragment / USDT integratsiya
 // ======================
-/** Admin panel switch — PostgreSQL tokens.stars_purchase_mode */
-let starsPurchaseMode = "robynhood";
-
-function publicAppConfig() {
-  const fragment = starsPurchaseMode === "fragment";
-  return {
-    maintenance: false,
-    stars_purchase_mode: starsPurchaseMode,
-    stars_purchase_path: fragment ? "/usdtstars" : "/stars",
-    premium_purchase_path: fragment ? "/usdtpremium" : "/premium",
-  };
+function getFragmentPaymentMethod() {
+  return getCachedSettings().fragment_payment_method;
 }
 
 const INTERNAL_API_BASE =
@@ -7351,6 +7329,7 @@ const usdtStarsCtx = {
   telegramAuth,
   internalSecretAuth,
   adminAuth,
+  getFragmentPaymentMethod,
 };
 
 const usdtPremiumCtx = {
@@ -7373,39 +7352,18 @@ const usdtPremiumCtx = {
   orderLimiter,
   telegramAuth,
   internalSecretAuth,
+  getFragmentPaymentMethod,
 };
 
 registerUsdtStarsRoutes(app, usdtStarsCtx);
 registerUsdtPremiumRoutes(app, usdtPremiumCtx);
 
-app.get("/api/app-config", (_req, res) => {
-  res.json(publicAppConfig());
-});
+registerSettingsRoutes(app, { pool, adminAuth });
 
-app.get("/api/admin/stars-purchase-mode", adminAuth, (_req, res) => {
-  res.json({ success: true, ...publicAppConfig() });
-});
-
-app.post("/api/admin/stars-purchase-mode", adminAuth, async (req, res) => {
-  try {
-    const mode = req.body?.mode;
-    if (mode !== "robynhood" && mode !== "fragment") {
-      return res.status(400).json({ error: "mode: robynhood | fragment" });
-    }
-    starsPurchaseMode = await setStarsPurchaseModeInDb(pool, mode);
-    console.log(`💎 Admin: stars purchase mode → ${starsPurchaseMode}`);
-    res.json({ success: true, ...publicAppConfig() });
-  } catch (err) {
-    console.error("❌ stars-purchase-mode:", err.message);
-    res.status(500).json({ error: "Server xatosi" });
-  }
-});
-
-async function bootstrapTokensAndPurchaseMode() {
+async function bootstrapAppData() {
   await ensureTokensTable(pool);
   await seedFragmentTokensFromEnvIfEmpty(pool);
-  await seedStarsPurchaseModeFromEnvIfMissing(pool);
-  starsPurchaseMode = await getStarsPurchaseModeFromDb(pool);
+  await bootstrapSettings(pool);
 }
 
 // ======================
@@ -7413,8 +7371,8 @@ async function bootstrapTokensAndPurchaseMode() {
 // ======================
 const PORT = process.env.PORT;
 
-await bootstrapTokensAndPurchaseMode().catch((err) =>
-  console.error("❌ tokens / purchase mode:", err.message)
+await bootstrapAppData().catch((err) =>
+  console.error("❌ bootstrap xatosi:", err.message)
 );
 
 loadPendingOrdersToCache().then(() => {
@@ -7422,6 +7380,7 @@ loadPendingOrdersToCache().then(() => {
 });
 
 app.listen(PORT, () => {
+  const s = getCachedSettings();
   console.log(`🚀 Backend running on port ${PORT}`);
-  console.log(`💎 Stars purchase mode: ${starsPurchaseMode} (admin panel switch)`);
+  console.log(`⚙️ settings jadvali: maintenance=${s.maintenance}, mode=${s.stars_purchase_mode}, pay=${s.fragment_payment_method}`);
 });

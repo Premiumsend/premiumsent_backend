@@ -47,7 +47,7 @@ def main() -> int:
     p.add_argument("--months", type=int, help="Premium oylar: 3, 6, 12")
     p.add_argument(
         "--payment-method",
-        default=os.getenv("FRAGMENT_PAYMENT_METHOD", "usdt_ton"),
+        default=os.getenv("FRAGMENT_PAYMENT_METHOD", "ton"),
         help="ton | usdt_ton",
     )
     p.add_argument(

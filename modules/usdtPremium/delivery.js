@@ -51,10 +51,22 @@ export async function sendPremiumViaFragment(order, ctx) {
   const username = order.recipient_username || order.recipient;
   const months = order.type_amount;
 
-  console.log("🔹 sendPremiumViaFragment:", { orderId, username, months });
+  const payMethod =
+    typeof ctx.getFragmentPaymentMethod === "function"
+      ? ctx.getFragmentPaymentMethod()
+      : "ton";
+
+  console.log("🔹 sendPremiumViaFragment:", {
+    orderId,
+    username,
+    months,
+    payment_method: payMethod,
+  });
 
   try {
-    const result = await buyPremiumViaFragment(username, months, pool);
+    const result = await buyPremiumViaFragment(username, months, pool, {
+      getFragmentPaymentMethod: ctx.getFragmentPaymentMethod,
+    });
     const errMsg = result.error || "";
 
     if (!result.success) {

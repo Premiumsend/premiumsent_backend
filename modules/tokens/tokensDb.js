@@ -51,6 +51,83 @@ export function fragmentTokensReady(tokens) {
   return Boolean(tokens?.fragment_ssid && tokens?.fragment_token);
 }
 
+/** Server `.env` dagi Fragment cookie (FRAGMENT_* / STEL_*). */
+export function getFragmentTokensFromEnv() {
+  return {
+    fragment_dt: (
+      process.env.FRAGMENT_DT ||
+      process.env.STEL_DT ||
+      DEFAULTS.fragment_dt
+    ).trim(),
+    fragment_ssid: (
+      process.env.FRAGMENT_SSID ||
+      process.env.STEL_SSID ||
+      ""
+    ).trim(),
+    fragment_token: (
+      process.env.FRAGMENT_TOKEN ||
+      process.env.STEL_TOKEN ||
+      ""
+    ).trim(),
+    fragment_ton_token: (
+      process.env.FRAGMENT_TON_TOKEN ||
+      process.env.STEL_TON_TOKEN ||
+      ""
+    ).trim(),
+  };
+}
+
+/**
+ * @param {"env"|"db"|"auto"} source — `env`: faqat .env; `db`: tokens jadvali; `auto`: .env to'liq bo'lsa env, aks holda DB
+ */
+export async function resolveFragmentTokens(pool, source = "auto") {
+  const envTokens = getFragmentTokensFromEnv();
+  if (source === "env") {
+    return { tokens: envTokens, source: "env" };
+  }
+  const dbTokens = await getFragmentTokens(pool);
+  if (source === "db") {
+    return { tokens: dbTokens, source: "db" };
+  }
+  if (fragmentTokensReady(envTokens)) {
+    return { tokens: envTokens, source: "env" };
+  }
+  return { tokens: dbTokens, source: "db" };
+}
+
+/** Admin panel: .env kalitlari holati (maskalangan). */
+export function getFragmentEnvDiagnostics() {
+  let databaseHost = "(noma'lum)";
+  try {
+    databaseHost =
+      new URL(process.env.DATABASE_URL || "").hostname || databaseHost;
+  } catch {
+    /* ignore */
+  }
+
+  const proxyRaw = (process.env.FRAGMENT_HTTP_PROXY || "").trim();
+  return {
+    has_seed: Boolean(process.env.SEED?.trim()),
+    has_api_key: Boolean(process.env.API_KEY?.trim()),
+    has_database_url: Boolean(process.env.DATABASE_URL?.trim()),
+    database_host: databaseHost,
+    wallet_type: (process.env.WALLET_TYPE || "").trim() || null,
+    fragment_dt: process.env.FRAGMENT_DT || process.env.STEL_DT || DEFAULTS.fragment_dt,
+    fragment_ssid: maskTokenValue(
+      process.env.FRAGMENT_SSID || process.env.STEL_SSID
+    ),
+    fragment_token: maskTokenValue(
+      process.env.FRAGMENT_TOKEN || process.env.STEL_TOKEN
+    ),
+    fragment_ton_token: maskTokenValue(
+      process.env.FRAGMENT_TON_TOKEN || process.env.STEL_TON_TOKEN
+    ),
+    fragment_http_proxy: proxyRaw
+      ? proxyRaw.replace(/:[^:@/]+@/, ":***@")
+      : null,
+  };
+}
+
 export function maskTokenValue(val, show = 4) {
   const v = String(val || "").trim();
   if (!v) return "(yo'q)";
@@ -128,7 +205,10 @@ export async function setFragmentTokens(pool, data) {
 }
 
 /** Python subprocess uchun env obyekti */
-export function fragmentTokensToProcessEnv(baseEnv, tokens) {
+export function fragmentTokensToProcessEnv(baseEnv, tokens, paymentMethod) {
+  const pm = normalizeFragmentPaymentMethod(
+    paymentMethod ?? baseEnv.FRAGMENT_PAYMENT_METHOD
+  );
   return {
     ...baseEnv,
     FRAGMENT_DT: tokens.fragment_dt || DEFAULTS.fragment_dt,
@@ -136,6 +216,7 @@ export function fragmentTokensToProcessEnv(baseEnv, tokens) {
     FRAGMENT_TOKEN: tokens.fragment_token || "",
     FRAGMENT_TON_TOKEN: tokens.fragment_ton_token || "",
     FRAGMENT_USE_DB_TOKENS: "1",
+    FRAGMENT_PAYMENT_METHOD: pm,
   };
 }
 
@@ -149,34 +230,3 @@ export async function ensureTokensTable(pool) {
   `);
 }
 
-/** Admin panel: Stars/Premium yo‘li — robynhood | fragment */
-export const STARS_PURCHASE_MODE_KEY = "stars_purchase_mode";
-
-export async function getStarsPurchaseModeFromDb(pool) {
-  const r = await pool.query(`SELECT value FROM tokens WHERE key = $1`, [
-    STARS_PURCHASE_MODE_KEY,
-  ]);
-  const v = String(r.rows[0]?.value || "").trim();
-  return v === "fragment" ? "fragment" : "robynhood";
-}
-
-export async function setStarsPurchaseModeInDb(pool, mode) {
-  const m = mode === "fragment" ? "fragment" : "robynhood";
-  await pool.query(
-    `INSERT INTO tokens (key, value, updated_at) VALUES ($1, $2, NOW())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [STARS_PURCHASE_MODE_KEY, m]
-  );
-  return m;
-}
-
-/** Birinchi marta: .env STARS_PURCHASE_MODE (ixtiyoriy), keyin faqat admin */
-export async function seedStarsPurchaseModeFromEnvIfMissing(pool) {
-  const r = await pool.query(`SELECT 1 FROM tokens WHERE key = $1`, [STARS_PURCHASE_MODE_KEY]);
-  if (r.rows.length) return false;
-  const envMode =
-    process.env.STARS_PURCHASE_MODE === "fragment" ? "fragment" : "robynhood";
-  await setStarsPurchaseModeInDb(pool, envMode);
-  console.log(`📦 stars_purchase_mode DB ga seed: ${envMode}`);
-  return true;
-}

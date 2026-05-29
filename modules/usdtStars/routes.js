@@ -3,6 +3,10 @@ import { sendStarsViaFragment } from "./delivery.js";
 import { getUsdtStarsPrice } from "./price.js";
 import { verifyFragmentCookies, fragmentEnvReadyAsync } from "./fragmentDelivery.js";
 import {
+  runFragmentCookieTest,
+  getFragmentCookieStatus,
+} from "./fragmentCookieTest.js";
+import {
   getFragmentTokens,
   setFragmentTokens,
   maskFragmentTokens,
@@ -110,6 +114,25 @@ export function registerUsdtStarsRoutes(app, ctx) {
     }
     const result = await verifyFragmentCookies(ctx.pool);
     res.status(result.ok ? 200 : 503).json(result);
+  });
+
+  app.get("/api/admin/fragment/env-status", adminAuth, async (req, res) => {
+    try {
+      res.json(await getFragmentCookieStatus(ctx.pool));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/fragment/cookie-test", adminAuth, async (req, res) => {
+    try {
+      const raw = String(req.query.source || "env").toLowerCase();
+      const source = raw === "db" || raw === "auto" ? raw : "env";
+      const result = await runFragmentCookieTest(ctx.pool, { source });
+      res.status(result.ok ? 200 : 503).json(result);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
   });
 
   app.get("/api/usdt-stars/price/:stars", (req, res) => getUsdtStarsPrice(req, res, ctx));

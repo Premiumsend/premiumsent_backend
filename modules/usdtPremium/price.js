@@ -77,5 +77,6 @@ export async function getUsdtPremiumPrice(req, res, ctx) {
     slotIndex,
     availableSlots: PRICE_SLOT_CONFIG.MAX_SLOTS - usedSlots,
     pool: slotKey,
+    fragment_payment_method: ctx.getFragmentPaymentMethod?.() || "ton",
   });
 }

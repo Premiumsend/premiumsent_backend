@@ -115,12 +115,12 @@ def _build_client():
 
 
 def _normalize_payment(method: str) -> str:
-    m = (method or "usdt_ton").strip().lower()
-    if m in ("usdt", "usd", "usdt-ton"):
+    m = (method or "ton").strip().lower()
+    if m in ("usdt", "usd", "usdt-ton", "usdt_ton"):
         return "usdt_ton"
     if m == "ton":
         return "ton"
-    return m
+    return "ton"
 
 
 async def _purchase_stars(client, recipient: str, amount: int, payment_method: str):
@@ -239,7 +239,7 @@ async def verify_fragment_cookies() -> dict:
     return await asyncio.to_thread(verify_fragment_cookies_sync)
 
 
-async def buy_stars(recipient: str, amount: int, payment_method: str = "usdt_ton") -> dict:
+async def buy_stars(recipient: str, amount: int, payment_method: str = "ton") -> dict:
     try:
         _ensure_fragment_proxy()
         async with _build_client() as client:
@@ -251,7 +251,7 @@ async def buy_stars(recipient: str, amount: int, payment_method: str = "usdt_ton
         return {"success": False, "error": str(e)}
 
 
-async def buy_premium(recipient: str, months: int, payment_method: str = "usdt_ton") -> dict:
+async def buy_premium(recipient: str, months: int, payment_method: str = "ton") -> dict:
     try:
         _ensure_fragment_proxy()
         async with _build_client() as client:

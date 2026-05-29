@@ -8,9 +8,24 @@ import {
   fragmentTokenFingerprint,
   fragmentTokensToProcessEnv,
 } from "../tokens/tokensDb.js";
+import {
+  getCachedSettings,
+  loadSettings,
+  normalizeFragmentPaymentMethod,
+} from "../settings/settingsDb.js";
 import { fragmentFetch, describeFragmentProxy } from "./fragmentProxy.js";
 
 export { describeFragmentProxy };
+
+async function resolveFragmentPaymentMethod(pool, getFragmentPaymentMethod) {
+  if (typeof getFragmentPaymentMethod === "function") {
+    return normalizeFragmentPaymentMethod(getFragmentPaymentMethod());
+  }
+  if (pool) {
+    return loadSettings(pool).then((s) => s.fragment_payment_method);
+  }
+  return getCachedSettings().fragment_payment_method;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.join(__dirname, "fragment_cli.py");
@@ -189,7 +204,7 @@ export async function verifyFragmentCookies(pool) {
   return merged;
 }
 
-export async function buyStarsViaFragment(recipientUsername, amount, pool) {
+export async function buyStarsViaFragment(recipientUsername, amount, pool, opts = {}) {
   const recipient = String(recipientUsername || "")
     .trim()
     .replace(/^@/, "");
@@ -213,8 +228,8 @@ export async function buyStarsViaFragment(recipientUsername, amount, pool) {
     };
   }
 
-  const paymentMethod = process.env.FRAGMENT_PAYMENT_METHOD || "usdt_ton";
-  const env = fragmentTokensToProcessEnv(process.env, tokens);
+  const paymentMethod = await resolveFragmentPaymentMethod(pool, opts.getFragmentPaymentMethod);
+  const env = fragmentTokensToProcessEnv(process.env, tokens, paymentMethod);
 
   return runFragmentCli(
     ["--recipient", recipient, "--amount", String(stars), "--payment-method", paymentMethod],
@@ -231,7 +246,7 @@ function parseFragmentCliResult(parsed) {
   };
 }
 
-export async function buyPremiumViaFragment(recipientUsername, months, pool) {
+export async function buyPremiumViaFragment(recipientUsername, months, pool, opts = {}) {
   const recipient = String(recipientUsername || "")
     .trim()
     .replace(/^@/, "");
@@ -255,8 +270,8 @@ export async function buyPremiumViaFragment(recipientUsername, months, pool) {
     };
   }
 
-  const paymentMethod = process.env.FRAGMENT_PAYMENT_METHOD || "usdt_ton";
-  const env = fragmentTokensToProcessEnv(process.env, tokens);
+  const paymentMethod = await resolveFragmentPaymentMethod(pool, opts.getFragmentPaymentMethod);
+  const env = fragmentTokensToProcessEnv(process.env, tokens, paymentMethod);
 
   return runFragmentCli(
     [

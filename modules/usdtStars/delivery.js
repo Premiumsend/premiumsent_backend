@@ -54,7 +54,9 @@ export async function sendStarsViaFragment(order, ctx) {
   console.log("🔹 sendStarsViaFragment:", { orderId, username, stars });
 
   try {
-    const result = await buyStarsViaFragment(username, stars, pool);
+    const result = await buyStarsViaFragment(username, stars, pool, {
+      getFragmentPaymentMethod: ctx.getFragmentPaymentMethod,
+    });
     const errMsg = result.error || "";
 
     if (!result.success) {
