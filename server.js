@@ -46,6 +46,7 @@ import {
   getRobynStarsPrice,
   registerRobynhoodAdminRoutes,
 } from "./modules/robynhoodClient/index.js";
+import { getPaymeeBalance, paymeeConfigured } from "./modules/paymeeClient/index.js";
 dotenv.config();
 const { Pool } = pkg;
 const app = express();
@@ -6314,26 +6315,58 @@ app.post("/api/admin/gift/send/:id", adminAuth, async (req, res) => {
 // ======================
 app.get("/api/admin/wallet-info", adminAuth, async (req, res) => {
   try {
-    const balanceData = await getRobynBalance();
-    const priceData = await getRobynStarsPrice(50);
-    // Calculate available stars
+    const paymeePromise = paymeeConfigured()
+      ? getPaymeeBalance().catch((e) => ({
+          success: false,
+          error: e.message,
+          status: e.status,
+        }))
+      : Promise.resolve(null);
+
+    const [balanceData, priceData, paymeeRaw] = await Promise.all([
+      getRobynBalance(),
+      getRobynStarsPrice(50),
+      paymeePromise,
+    ]);
+
     const mainnetBalance = parseFloat(balanceData.mainnet_balance) || 0;
     const testnetBalance = parseFloat(balanceData.testnet_balance) || 0;
     const priceFor50Stars = parseFloat(priceData.price) || 0;
     const pricePerStar = priceFor50Stars / 50;
     const availableStars = pricePerStar > 0 ? Math.floor(mainnetBalance / pricePerStar) : 0;
+
+    let paymee = { configured: paymeeConfigured() };
+    if (paymee.configured && paymeeRaw) {
+      if (paymeeRaw.success === false && paymeeRaw.error) {
+        paymee = {
+          configured: true,
+          success: false,
+          error: paymeeRaw.error,
+          status: paymeeRaw.status,
+        };
+      } else {
+        paymee = {
+          configured: true,
+          success: paymeeRaw.success !== false,
+          balance_usdt: Number(paymeeRaw.balance_usdt),
+          currency: paymeeRaw.currency || "USDT",
+        };
+      }
+    }
+
     res.json({
       success: true,
       wallet: {
         mainnet_balance: mainnetBalance,
-        testnet_balance: testnetBalance
+        testnet_balance: testnetBalance,
       },
       stars_price: {
         price_for_50: priceFor50Stars,
         price_per_star: pricePerStar,
-        currency: priceData.currency || "TON"
+        currency: priceData.currency || "TON",
       },
-      available_stars: availableStars
+      available_stars: availableStars,
+      paymee,
     });
   } catch (err) {
     console.error("❌ /api/admin/wallet-info ERROR:", err);
@@ -6905,21 +6938,38 @@ async function deliverGiftOrder(order) {
   
   return { status: "delivered", transaction_id: data.transaction_id };
 }
+/** order_type / type hint → stars | premium | gift (premium_paymee, stars_usdt, …) */
+function resolveNotificationKind(order, typeHint) {
+  const raw = String(order?.order_type || typeHint || "stars").toLowerCase();
+  if (raw.includes("premium")) return "premium";
+  if (raw.includes("gift")) return "gift";
+  return "stars";
+}
+
+function formatNotificationQuantity(order, kind) {
+  const n = order?.type_amount ?? "?";
+  if (kind === "premium") return `${n} oy`;
+  if (kind === "gift") return `${n} stars (gift)`;
+  return `${n} stars`;
+}
+
 // 📢 Unified kanal xabari
 async function sendUnifiedChannelNotification(order, type, isFailed = false) {
   if (!bot) return;
-  
-  let emoji = isFailed ? '⚠️' : (type === 'premium' ? '👑' : type === 'gift' ? '🎁' : '🌟');
-  let typeName = type === 'premium' ? 'Premium' : type === 'gift' ? 'Gift' : 'Stars';
-  
-  let title = isFailed 
-    ? `<b>${typeName} xaridi muvaffaqiyatsiz bo'ldi!</b>` 
+
+  const kind = resolveNotificationKind(order, type);
+
+  let emoji = isFailed ? "⚠️" : kind === "premium" ? "👑" : kind === "gift" ? "🎁" : "🌟";
+  let typeName = kind === "premium" ? "Premium" : kind === "gift" ? "Gift" : "Stars";
+
+  let title = isFailed
+    ? `<b>${typeName} xaridi muvaffaqiyatsiz bo'ldi!</b>`
     : `<b>Yangi ${typeName} sotildi!</b>`;
 
-  const statusText = isFailed 
-    ? `❌ Status: To'langan, ammo yetkazilmadi (failed)` 
+  const statusText = isFailed
+    ? `❌ Status: To'langan, ammo yetkazilmadi (failed)`
     : `✅ Status: Yetkazildi`;
-    
+
   let senderUsername = "Noma'lum";
   if (order.owner_user_id) {
     try {
@@ -6936,11 +6986,12 @@ async function sendUnifiedChannelNotification(order, type, isFailed = false) {
   const formattedSender = senderUsername.startsWith('@') ? senderUsername : `@${senderUsername}`;
   const formattedRecipient = rawRecipient.startsWith('@') ? rawRecipient : `@${rawRecipient}`;
   
+  const summNum = Number(order.summ) || 0;
   const message = `${emoji} ${title}\n\n` +
     `📦 Order: #${order.id}\n` +
     `👤 ${formattedSender} -> ${formattedRecipient}\n` +
-    `💫 Miqdor: ${order.type_amount} ${type === 'premium' ? 'oy' : 'stars'}\n` +
-    `💰 Summa: ${order.summ.toLocaleString()} so'm\n` +
+    `💫 Miqdor: ${formatNotificationQuantity(order, kind)}\n` +
+    `💰 Summa: ${summNum.toLocaleString()} so'm\n` +
     statusText;
   
   const targetChannel = isFailed ? ERROR_LOG_CHANNEL_ID : ORDERS_CHANNEL;

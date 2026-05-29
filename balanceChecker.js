@@ -263,35 +263,7 @@ export async function initBalanceClient() {
                     }),
                 });
 
-                // 2) Paymee Stars (/paymeestars)
-                if (!res.ok && MATCH_API_STARS_PAYMEE) {
-                    const errBody = await res.text().catch(() => "");
-                    console.log(
-                        "⭐ Robyn stars topilmadi → Paymee stars urinyapti...",
-                        errBody ? errBody.slice(0, 200) : ""
-                    );
-                    res = await fetch(MATCH_API_STARS_PAYMEE, {
-                        method: "POST",
-                        headers: matchHeaders,
-                        body: JSON.stringify(parsed),
-                    });
-                }
-
-                // 3) Fragment Stars (/usdtstars)
-                if (!res.ok && MATCH_API_STARS_USDT) {
-                    const errBody = await res.text().catch(() => "");
-                    console.log(
-                        "⭐ Paymee stars topilmadi → Fragment stars urinyapti...",
-                        errBody ? errBody.slice(0, 200) : ""
-                    );
-                    res = await fetch(MATCH_API_STARS_USDT, {
-                        method: "POST",
-                        headers: matchHeaders,
-                        body: JSON.stringify(parsed),
-                    });
-                }
-
-                // 4) Paymee Premium
+                // 2) Paymee Premium — stars dan oldin (bir xil summ collision)
                 if (!res.ok && MATCH_API_PREMIUM_PAYMEE) {
                     const errBody = await res.text().catch(() => "");
                     console.log(
@@ -302,6 +274,34 @@ export async function initBalanceClient() {
                         method: "POST",
                         headers: matchHeaders,
                         body: JSON.stringify({ amount: parsed.amount }),
+                    });
+                }
+
+                // 3) Paymee Stars (/paymeestars)
+                if (!res.ok && MATCH_API_STARS_PAYMEE) {
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "⭐ Paymee premium topilmadi → Paymee stars...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
+                    res = await fetch(MATCH_API_STARS_PAYMEE, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify(parsed),
+                    });
+                }
+
+                // 4) Fragment Stars (/usdtstars)
+                if (!res.ok && MATCH_API_STARS_USDT) {
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "⭐ Paymee stars topilmadi → Fragment stars urinyapti...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
+                    res = await fetch(MATCH_API_STARS_USDT, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify(parsed),
                     });
                 }
 
