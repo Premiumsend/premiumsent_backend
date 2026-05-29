@@ -1,11 +1,11 @@
-import { createUsdtPremiumOrder } from "./orderCreate.js";
-import { sendPremiumViaFragment } from "./delivery.js";
-import { getUsdtPremiumPrice } from "./price.js";
+import { createPaymeePremiumOrder } from "./orderCreate.js";
+import { sendPremiumViaPaymee } from "./delivery.js";
+import { getPaymeePremiumPrice } from "./price.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 
-const ORDER_TYPE = "premium_usdt";
+const ORDER_TYPE = "premium_paymee";
 
-export async function matchUsdtPremiumPayment(req, res, ctx) {
+export async function matchPaymeePremiumPayment(req, res, ctx) {
   const { pool } = ctx;
 
   try {
@@ -38,24 +38,18 @@ export async function matchUsdtPremiumPayment(req, res, ctx) {
     );
 
     if (!updated.rows.length) {
-      console.log(`❌ USDT premium match topilmadi: amount=${matchAmount}`);
-      await logPaymentMatchDebug(pool, matchAmount, "usdt-premium");
-      return res.status(404).json({ message: "Pending USDT premium payment not found" });
+      console.log(`❌ Paymee premium match topilmadi: amount=${matchAmount}`);
+      await logPaymentMatchDebug(pool, matchAmount, "paymee-premium");
+      return res.status(404).json({ message: "Pending Paymee premium payment not found" });
     }
 
     const order = updated.rows[0];
     console.log(
-      `🎉 USDT Premium to'lov tasdiqlandi: #${order.id} | ${order.summ} so'm → Fragment`
+      `🎉 Paymee Premium to'lov tasdiqlandi: #${order.id} | ${order.summ} so'm → Partner API`
     );
 
-    const payMethod =
-      typeof ctx.getFragmentPaymentMethod === "function"
-        ? ctx.getFragmentPaymentMethod()
-        : "ton";
-    console.log(`📤 Fragment premium yuborish: payment_method=${payMethod}`);
-
-    sendPremiumViaFragment(order, ctx).catch((err) => {
-      console.error("❌ Fragment premium delivery async error:", err.message);
+    sendPremiumViaPaymee(order, ctx).catch((err) => {
+      console.error("❌ Paymee premium delivery async error:", err.message);
     });
 
     res.json({
@@ -69,25 +63,27 @@ export async function matchUsdtPremiumPayment(req, res, ctx) {
       order_type: ORDER_TYPE,
     });
   } catch (err) {
-    console.error("❌ /api/usdt-premium/match error:", err);
+    console.error("❌ /api/paymee-premium/match error:", err);
     res.status(500).json({ error: "Server error" });
   }
 }
 
-export function registerUsdtPremiumRoutes(app, ctx) {
+export function registerPaymeePremiumRoutes(app, ctx) {
   const { orderLimiter, telegramAuth, internalSecretAuth } = ctx;
 
-  app.get("/api/usdt-premium/price/:months", (req, res) => getUsdtPremiumPrice(req, res, ctx));
-
-  app.post("/api/usdt-premium/order", orderLimiter, telegramAuth, (req, res) =>
-    createUsdtPremiumOrder(req, res, ctx)
+  app.get("/api/paymee-premium/price/:months", (req, res) =>
+    getPaymeePremiumPrice(req, res, ctx)
   );
 
-  app.post("/api/usdt-premium/match", internalSecretAuth, (req, res) =>
-    matchUsdtPremiumPayment(req, res, ctx)
+  app.post("/api/paymee-premium/order", orderLimiter, telegramAuth, (req, res) =>
+    createPaymeePremiumOrder(req, res, ctx)
   );
 
-  app.get("/api/usdt-premium/transactions/:id", telegramAuth, async (req, res) => {
+  app.post("/api/paymee-premium/match", internalSecretAuth, (req, res) =>
+    matchPaymeePremiumPayment(req, res, ctx)
+  );
+
+  app.get("/api/paymee-premium/transactions/:id", telegramAuth, async (req, res) => {
     try {
       const id = Number(req.params.id);
       const result = await ctx.pool.query(
@@ -115,12 +111,12 @@ export function registerUsdtPremiumRoutes(app, ctx) {
         created_at: order.created_at,
       });
     } catch (err) {
-      console.error("❌ /api/usdt-premium/transactions error:", err);
+      console.error("❌ /api/paymee-premium/transactions error:", err);
       res.status(500).json({ error: "Server error" });
     }
   });
 
   console.log(
-    "✅ USDT Premium moduli: /api/usdt-premium/price, /api/usdt-premium/order, /api/usdt-premium/match"
+    "✅ Paymee Premium moduli: /api/paymee-premium/price, /api/paymee-premium/order, /api/paymee-premium/match"
   );
 }

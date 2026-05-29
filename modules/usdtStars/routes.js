@@ -12,6 +12,7 @@ import {
   maskFragmentTokens,
   FRAGMENT_TOKEN_KEYS,
 } from "../tokens/tokensDb.js";
+import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 
 const ORDER_TYPE = "stars_usdt";
 
@@ -54,6 +55,7 @@ export async function matchUsdtStarsPayment(req, res, ctx) {
       console.log(
         `❌ USDT stars match topilmadi: amount=${matchAmount} card=${card_last4}`
       );
+      await logPaymentMatchDebug(pool, matchAmount, "usdt-stars");
       return res.status(404).json({ message: "Pending USDT stars payment not found" });
     }
 

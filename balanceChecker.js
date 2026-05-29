@@ -14,8 +14,10 @@ const UZCARD_CHAT_ID = String(process.env.UZCARD_CHAT_ID);
 const TARGET_CARD_SUFFIX = process.env.TARGET_CARD_SUFFIX?.replace(/\D/g, "").slice(-4);
 
 const MATCH_API_STARS = process.env.MATCH_API_STARS;
+const MATCH_API_STARS_PAYMEE = process.env.MATCH_API_STARS_PAYMEE;
 const MATCH_API_STARS_USDT = process.env.MATCH_API_STARS_USDT;
 const MATCH_API_PREMIUM = process.env.MATCH_API_PREMIUM;
+const MATCH_API_PREMIUM_PAYMEE = process.env.MATCH_API_PREMIUM_PAYMEE;
 const MATCH_API_PREMIUM_USDT = process.env.MATCH_API_PREMIUM_USDT;
 const MATCH_API_GIFT = process.env.MATCH_API_GIFT || 'http://localhost:5001/api/gift/match';
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || '';
@@ -261,11 +263,25 @@ export async function initBalanceClient() {
                     }),
                 });
 
-                // 2) Fragment Stars (/usdtstars)
+                // 2) Paymee Stars (/paymeestars)
+                if (!res.ok && MATCH_API_STARS_PAYMEE) {
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "⭐ Robyn stars topilmadi → Paymee stars urinyapti...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
+                    res = await fetch(MATCH_API_STARS_PAYMEE, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify(parsed),
+                    });
+                }
+
+                // 3) Fragment Stars (/usdtstars)
                 if (!res.ok && MATCH_API_STARS_USDT) {
                     const errBody = await res.text().catch(() => "");
                     console.log(
-                        "⭐ Robyn stars topilmadi → Fragment stars urinyapti...",
+                        "⭐ Paymee stars topilmadi → Fragment stars urinyapti...",
                         errBody ? errBody.slice(0, 200) : ""
                     );
                     res = await fetch(MATCH_API_STARS_USDT, {
@@ -275,7 +291,21 @@ export async function initBalanceClient() {
                     });
                 }
 
-                // 3) Fragment Premium — Robyn premium dan OLDIN (starspaymeeorg tartibi)
+                // 4) Paymee Premium
+                if (!res.ok && MATCH_API_PREMIUM_PAYMEE) {
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "💎 Paymee premium urinyapti...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
+                    res = await fetch(MATCH_API_PREMIUM_PAYMEE, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify({ amount: parsed.amount }),
+                    });
+                }
+
+                // 5) Fragment Premium — Robyn premium dan OLDIN
                 if (!res.ok && MATCH_API_PREMIUM_USDT) {
                     const errBody = await res.text().catch(() => "");
                     console.log(
@@ -289,7 +319,7 @@ export async function initBalanceClient() {
                     });
                 }
 
-                // 4) RobynHood Premium
+                // 6) RobynHood Premium
                 if (!res.ok && MATCH_API_PREMIUM) {
                     console.log("💎 Fragment premium topilmadi → Robyn premium...");
                     res = await fetch(MATCH_API_PREMIUM, {

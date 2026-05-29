@@ -18,6 +18,16 @@ import {
   usdtPremiumSlotKey,
 } from "./modules/usdtPremium/index.js";
 import {
+  registerPaymeeStarsRoutes,
+  sendStarsViaPaymee,
+  paymeeSlotKey,
+} from "./modules/paymeeStars/index.js";
+import {
+  registerPaymeePremiumRoutes,
+  paymeePremiumSlotKey,
+  sendPremiumViaPaymee,
+} from "./modules/paymeePremium/index.js";
+import {
   ensureTokensTable,
   seedFragmentTokensFromEnvIfEmpty,
   syncFragmentTokensFromEnvIfMissing,
@@ -2305,7 +2315,7 @@ app.get("/api/transactions/all", adminAuth, async (req, res) => {
         o.order_type
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.order_type IN ('stars', 'stars_usdt')
+      WHERE o.order_type IN ('stars', 'stars_usdt', 'stars_paymee')
       ORDER BY o.id DESC
     `);
     
@@ -2313,7 +2323,12 @@ app.get("/api/transactions/all", adminAuth, async (req, res) => {
     const mapped = result.rows.map(row => ({
       ...row,
       status: row.status === 'completed' ? 'stars_sent' : row.status,
-      delivery_type: row.order_type === 'stars_usdt' ? 'fragment' : 'robynhood',
+      delivery_type:
+        row.order_type === 'stars_usdt'
+          ? 'fragment'
+          : row.order_type === 'stars_paymee'
+            ? 'paymee'
+            : 'robynhood',
     }));
     
     res.json(mapped);
@@ -2349,7 +2364,7 @@ app.get("/api/transactions/status/:status", adminAuth, async (req, res) => {
         o.order_type
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.status = $1 AND o.order_type IN ('stars', 'stars_usdt')
+      WHERE o.status = $1 AND o.order_type IN ('stars', 'stars_usdt', 'stars_paymee')
       ORDER BY o.id DESC`,
       [dbStatus]
     );
@@ -2358,7 +2373,12 @@ app.get("/api/transactions/status/:status", adminAuth, async (req, res) => {
     const mapped = result.rows.map(row => ({
       ...row,
       status: row.status === 'completed' ? 'stars_sent' : row.status,
-      delivery_type: row.order_type === 'stars_usdt' ? 'fragment' : 'robynhood',
+      delivery_type:
+        row.order_type === 'stars_usdt'
+          ? 'fragment'
+          : row.order_type === 'stars_paymee'
+            ? 'paymee'
+            : 'robynhood',
     }));
     
     res.json(mapped);
@@ -2930,8 +2950,18 @@ app.get("/api/transactions/:id", telegramAuth, async (req, res) => {
       // To'lov qabul qilindi, yuborilmoqda
       legacyStatus = 'payment_received';
     } else if (order.status === 'completed') {
-      if (order.order_type === 'stars' || order.order_type === 'stars_usdt') legacyStatus = 'stars_sent';
-      else if (order.order_type === 'premium' || order.order_type === 'premium_usdt') legacyStatus = 'premium_sent';
+      if (
+        order.order_type === 'stars' ||
+        order.order_type === 'stars_usdt' ||
+        order.order_type === 'stars_paymee'
+      )
+        legacyStatus = 'stars_sent';
+      else if (
+        order.order_type === 'premium' ||
+        order.order_type === 'premium_usdt' ||
+        order.order_type === 'premium_paymee'
+      )
+        legacyStatus = 'premium_sent';
       else if (order.order_type === 'gift') legacyStatus = 'gift_sent';
     }
     // Backward compatible response
@@ -2970,7 +3000,15 @@ app.post("/api/payments/match", internalAuth, async (req, res) => {
         ? allowed_order_types
         : ["stars"]
     ).filter((t) =>
-      ["stars", "stars_usdt", "premium", "premium_usdt", "gift"].includes(String(t))
+      [
+        "stars",
+        "stars_usdt",
+        "stars_paymee",
+        "premium",
+        "premium_usdt",
+        "premium_paymee",
+        "gift",
+      ].includes(String(t))
     );
 
     const updated = await pool.query(
@@ -2991,8 +3029,11 @@ app.post("/api/payments/match", internalAuth, async (req, res) => {
        RETURNING *`,
       [matchAmount, typeFilter]
     );
-    if (!updated.rows.length)
+    if (!updated.rows.length) {
+      const { logPaymentMatchDebug } = await import("./modules/payments/matchDebug.js");
+      await logPaymentMatchDebug(pool, matchAmount, "robyn-stars");
       return res.status(404).json({ message: "Pending payment not found" });
+    }
     const order = updated.rows[0];
     console.log(`🎉 To'lov tasdiqlandi: #${order.id} | ${order.summ} so'm | ${order.order_type}`);
     if (order.order_type === "stars") {
@@ -3012,6 +3053,17 @@ app.post("/api/payments/match", internalAuth, async (req, res) => {
       );
       sendStarsViaFragment(order, usdtStarsCtx).catch((err) => {
         console.error("❌ Fragment stars yuborishda xato:", err.message);
+      });
+    } else if (order.order_type === "stars_paymee") {
+      processReferralBonus(order.recipient_username, order.type_amount, order.id).catch(
+        (err) => console.error("❌ Referral bonus error:", err.message)
+      );
+      sendStarsViaPaymee(order, paymeeStarsCtx).catch((err) => {
+        console.error("❌ Paymee stars yuborishda xato:", err.message);
+      });
+    } else if (order.order_type === "premium_paymee") {
+      sendPremiumViaPaymee(order, paymeePremiumCtx).catch((err) => {
+        console.error("❌ Paymee premium yuborishda xato:", err.message);
       });
     } else if (order.order_type === "premium_usdt") {
       sendPremiumViaFragment(order, usdtPremiumCtx).catch((err) => {
@@ -3074,6 +3126,23 @@ app.post("/api/admin/stars/send/:id", adminAuth, async (req, res) => {
       return res.json({
         success: true,
         message: "Fragment orqali stars yuborildi",
+        result: tx,
+      });
+    }
+
+    if (order.order_type === "stars_paymee") {
+      const tx = await sendStarsViaPaymee(order, {
+        pool,
+        bot,
+        releasePriceSlotByOrderId,
+        releaseDiscountPriceSlotByOrderId,
+        removePriceFromCacheByOrderId,
+        sendUnifiedChannelNotification,
+        paymeeSlotKey,
+      });
+      return res.json({
+        success: true,
+        message: "Paymee API orqali stars yuborildi",
         result: tx,
       });
     }
@@ -3754,8 +3823,11 @@ app.post("/api/premium/match", internalAuth, async (req, res) => {
       console.log("❌ Amount yo‘q");
       return res.status(400).json({ error: "amount kerak" });
     }
-    console.log("🔎 Pending premium order qidirilmoqda:", amount);
-    // 🔐 ATOMIC UPDATE - orders jadvalidan
+    const matchAmount = parseInt(amount, 10);
+    if (!matchAmount || matchAmount <= 0) {
+      return res.status(400).json({ error: "amount noto'g'ri" });
+    }
+    console.log("🔎 Pending premium order qidirilmoqda:", matchAmount);
     const updated = await pool.query(
       `UPDATE orders 
        SET payment_status='paid', status='processing'
@@ -3765,15 +3837,17 @@ app.post("/api/premium/match", internalAuth, async (req, res) => {
            AND payment_status='pending' 
            AND status='pending'
            AND order_type='premium'
-           AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '15 minutes'
+           AND created_at >= NOW() - INTERVAL '15 minutes'
          ORDER BY id DESC LIMIT 1 
          FOR UPDATE SKIP LOCKED
        ) 
        RETURNING *`,
-      [amount]
+      [matchAmount]
     );
     if (!updated.rows.length) {
       console.log("❌ Pending premium TOPILMADI");
+      const { logPaymentMatchDebug } = await import("./modules/payments/matchDebug.js");
+      await logPaymentMatchDebug(pool, matchAmount, "robyn-premium");
       return res.status(404).json({ error: "Pending premium topilmadi" });
     }
     const order = updated.rows[0];
@@ -3956,7 +4030,7 @@ app.get("/api/admin/premium/list", adminAuth, async (req, res) => {
         o.created_at
       FROM orders o
       LEFT JOIN users u ON o.owner_user_id = u.user_id
-      WHERE o.order_type IN ('premium', 'premium_usdt')
+      WHERE o.order_type IN ('premium', 'premium_usdt', 'premium_paymee')
     `;
     const params = [];
     // filter: status (premium_sent → completed mapping)
@@ -3978,7 +4052,12 @@ app.get("/api/admin/premium/list", adminAuth, async (req, res) => {
     const mapped = result.rows.map(row => ({
       ...row,
       status: row.status === 'completed' ? 'premium_sent' : row.status,
-      delivery_type: row.order_type === 'premium_usdt' ? 'fragment' : 'robynhood',
+      delivery_type:
+        row.order_type === 'premium_usdt'
+          ? 'fragment'
+          : row.order_type === 'premium_paymee'
+            ? 'paymee'
+            : 'robynhood',
     }));
     
     res.json({ success: true, orders: mapped });
@@ -4044,12 +4123,29 @@ app.post("/api/admin/premium/resend/:id", adminAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID noto‘g‘ri" });
     const orderResult = await pool.query(
-      "SELECT * FROM orders WHERE id=$1 AND order_type IN ('premium', 'premium_usdt')",
+      "SELECT * FROM orders WHERE id=$1 AND order_type IN ('premium', 'premium_usdt', 'premium_paymee')",
       [id]
     );
     if (!orderResult.rows.length)
       return res.status(404).json({ error: "Order topilmadi" });
     const order = orderResult.rows[0];
+
+    if (order.order_type === "premium_paymee") {
+      const tx = await sendPremiumViaPaymee(order, {
+        pool,
+        bot,
+        releasePriceSlotByOrderId,
+        releaseDiscountPriceSlotByOrderId,
+        removePriceFromCacheByOrderId,
+        sendUnifiedChannelNotification,
+        processPremiumReferralBonusByUserId,
+      });
+      return res.json({
+        success: true,
+        message: "Paymee API orqali premium yuborildi",
+        transaction_id: tx,
+      });
+    }
 
     if (order.order_type === "premium_usdt") {
       const tx = await sendPremiumViaFragment(order, {
@@ -7384,6 +7480,18 @@ const usdtPremiumCtx = {
 
 registerUsdtStarsRoutes(app, usdtStarsCtx);
 registerUsdtPremiumRoutes(app, usdtPremiumCtx);
+
+const paymeeStarsCtx = {
+  ...usdtStarsCtx,
+  usdtSlotKey: paymeeSlotKey,
+};
+
+const paymeePremiumCtx = {
+  ...usdtPremiumCtx,
+};
+
+registerPaymeeStarsRoutes(app, paymeeStarsCtx);
+registerPaymeePremiumRoutes(app, paymeePremiumCtx);
 
 registerSettingsRoutes(app, { pool, adminAuth });
 

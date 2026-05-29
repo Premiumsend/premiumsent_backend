@@ -55,7 +55,10 @@ export async function setSetting(pool, key, value) {
 }
 
 export function normalizeStarsPurchaseMode(mode) {
-  return String(mode || "robynhood").trim() === "fragment" ? "fragment" : "robynhood";
+  const m = String(mode || "robynhood").trim().toLowerCase();
+  if (m === "fragment") return "fragment";
+  if (m === "paymee") return "paymee";
+  return "robynhood";
 }
 
 export function normalizeFragmentPaymentMethod(method) {
@@ -105,12 +108,23 @@ export async function loadSettings(pool, force = false) {
 }
 
 export function toPublicAppConfig(settings) {
-  const fragment = settings.stars_purchase_mode === "fragment";
+  const mode = settings.stars_purchase_mode;
+  const fragment = mode === "fragment";
+  const paymee = mode === "paymee";
+  let starsPath = "/stars";
+  let premiumPath = "/premium";
+  if (fragment) {
+    starsPath = "/usdtstars";
+    premiumPath = "/usdtpremium";
+  } else if (paymee) {
+    starsPath = "/paymeestars";
+    premiumPath = "/paymeepremium";
+  }
   return {
     maintenance: Boolean(settings.maintenance),
-    stars_purchase_mode: settings.stars_purchase_mode,
-    stars_purchase_path: fragment ? "/usdtstars" : "/stars",
-    premium_purchase_path: fragment ? "/usdtpremium" : "/premium",
+    stars_purchase_mode: mode,
+    stars_purchase_path: starsPath,
+    premium_purchase_path: premiumPath,
     fragment_payment_method: settings.fragment_payment_method,
     fragment_payment_label: fragmentPaymentMethodLabel(settings.fragment_payment_method),
   };
@@ -161,8 +175,10 @@ export async function seedSettingsFromEnvIfMissing(pool) {
   let seeded = 0;
 
   if ((await getSettingRaw(pool, SETTING_KEYS.STARS_PURCHASE_MODE)) == null) {
-    const mode =
-      process.env.STARS_PURCHASE_MODE === "fragment" ? "fragment" : "robynhood";
+    const envMode = String(process.env.STARS_PURCHASE_MODE || "robynhood")
+      .trim()
+      .toLowerCase();
+    const mode = normalizeStarsPurchaseMode(envMode);
     await setSetting(pool, SETTING_KEYS.STARS_PURCHASE_MODE, mode);
     seeded++;
   }

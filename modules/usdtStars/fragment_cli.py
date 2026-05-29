@@ -64,7 +64,7 @@ def main() -> int:
             out = asyncio.run(verify_fragment_cookies())
             if not out.get("diagnostics"):
                 out["diagnostics"] = fragment_env_diagnostics()
-            print(json.dumps(out, ensure_ascii=False, indent=2))
+            print(json.dumps(out, ensure_ascii=False))
             return 0 if out.get("ok") else 1
         if args.premium:
             if not args.recipient or not args.months:

@@ -69,16 +69,18 @@ export async function runFragmentCookieTest(pool, opts = {}) {
 
   const httpOk = Boolean(httpResult.ok);
   const pyOk = pyfragment_check.ok === true;
-  const purchase_ready = httpOk && pyOk && wallet.wallet_ready;
+  const purchase_ready = httpOk && wallet.wallet_ready;
 
   const hints = [];
-  if (httpOk && !pyOk) {
+  if (httpOk && !pyOk && !pyfragment_check.skipped) {
     hints.push(
-      "HTTP 200 — sahifa ochiladi, lekin pyfragment sessiya yaroqsiz. fragment.com da qayta login, yangi cookie."
+      "HTTP 200 OK. Python verify ikkilamchi — sotib olishda cookie yangilash kerak bo'lishi mumkin."
     );
   }
-  if (wallet.wallet_ready && httpOk && pyOk) {
-    hints.push("Tekshiruv OK. Agar sotib olish xato bersa — hamyonda TON balans va API_KEY ni tekshiring.");
+  if (wallet.wallet_ready && httpOk) {
+    hints.push(
+      "Cookie sahifasi OK. Sotib olish: TonAPI API_KEY, TON balans, stars/buy dan yangi stel_ton_token."
+    );
   }
   if (!wallet.wallet_ready) {
     hints.push("SEED (12/18/24 so'z) va API_KEY .env da to'g'ri bo'lishi kerak.");

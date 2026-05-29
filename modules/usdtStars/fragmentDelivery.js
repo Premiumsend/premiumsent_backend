@@ -132,6 +132,34 @@ export function summarizeFragmentCliError(raw) {
   return lines[lines.length - 1] || text.slice(0, 300);
 }
 
+function parseJsonFromCliStdout(stdout) {
+  const raw = String(stdout || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      /* ignore */
+    }
+  }
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]);
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
 function runFragmentCli(extraArgs = [], spawnEnv = process.env) {
   return new Promise((resolve) => {
     const proc = spawn(pythonCommand(), [CLI_PATH, ...extraArgs], {
@@ -155,20 +183,19 @@ function runFragmentCli(extraArgs = [], spawnEnv = process.env) {
     });
 
     proc.on("close", () => {
-      const line = stdout.trim().split("\n").filter(Boolean).pop() || "";
-      try {
-        const parsed = JSON.parse(line);
+      const parsed = parseJsonFromCliStdout(stdout);
+      if (parsed) {
         if (!parsed.ok && !parsed.success && stderr) {
           parsed.stderr = stderr.slice(0, 500);
         }
         resolve(parsed);
-      } catch {
-        resolve({
-          ok: false,
-          error: summarizeFragmentCliError(stderr || stdout),
-          raw_stderr: stderr.slice(0, 800),
-        });
+        return;
       }
+      resolve({
+        ok: false,
+        error: summarizeFragmentCliError(stderr || stdout),
+        raw_stderr: stderr.slice(0, 800),
+      });
     });
   });
 }
@@ -276,25 +303,31 @@ export async function verifyFragmentCookies(pool) {
   const env = fragmentTokensToProcessEnv(process.env, tokens);
   const pyResult = await runFragmentCli(["--verify-cookies"], env);
 
+  const httpOk = Boolean(httpResult.ok);
+  const pyOk = Boolean(pyResult.ok);
+
   const merged = {
     ...httpResult,
     diagnostics,
-    http_check: { ok: httpResult.ok, status: httpResult.status },
+    http_check: { ok: httpOk, status: httpResult.status },
     pyfragment_check: {
-      ok: Boolean(pyResult.ok),
+      ok: pyOk,
       error: pyResult.error || pyResult.stderr || null,
     },
-    ok: Boolean(httpResult.ok && pyResult.ok),
+    /** Cookie sahifasi: HTTP yetarli (starspaymeeorg). Sotib olish alohida tekshiriladi. */
+    ok: httpOk,
   };
 
-  if (httpResult.ok && !pyResult.ok) {
-    merged.warning =
-      "HTTP 200 (sahifa ochiladi), lekin pyfragment sessiyasi xato — stars sotib olish ishlamasligi mumkin. Cookie yangilang.";
-    merged.hints = [
-      "fragment.com da stars/buy sahifasida yangi cookie oling (stel_ton_token bilan).",
-      "npm run fragment:verify",
-      "Hamyonda yetarli TON borligini tekshiring.",
-    ];
+  if (httpOk && !pyOk) {
+    merged.note =
+      "HTTP 200 OK. Python verify ikkilamchi tekshiruv (xato bo'lsa ham cookie sahifasi ochiladi).";
+  }
+
+  if (!httpOk) {
+    merged.error =
+      httpResult.error ||
+      (httpResult.status ? `Fragment HTTP ${httpResult.status}` : "Cookie yaroqsiz");
+    merged.hints = httpResult.hints;
   }
 
   return merged;

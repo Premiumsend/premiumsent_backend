@@ -50,13 +50,25 @@ function validateEnv() {
     process.exit(1);
   }
 
-  const usdtMatch = [
+  const altMatch = [
+    ["MATCH_API_STARS_PAYMEE", process.env.MATCH_API_STARS_PAYMEE],
+    ["MATCH_API_PREMIUM_PAYMEE", process.env.MATCH_API_PREMIUM_PAYMEE],
     ["MATCH_API_STARS_USDT", process.env.MATCH_API_STARS_USDT],
     ["MATCH_API_PREMIUM_USDT", process.env.MATCH_API_PREMIUM_USDT],
   ];
-  for (const [key, val] of usdtMatch) {
+  for (const [key, val] of altMatch) {
     if (!val || !String(val).trim()) {
-      console.warn(`⚠️ ${key} yo'q — Fragment/USDT buyurtmalar SMS orqali tasdiqlanmaydi`);
+      console.warn(`⚠️ ${key} yo'q — tegishli buyurtmalar SMS orqali tasdiqlanmaydi`);
+    }
+  }
+
+  if (process.env.MATCH_API_STARS_PAYMEE?.trim()) {
+    if (!process.env.STARS_PAYMEE_API_URL?.trim() || !process.env.STARS_PAYMEE_API_KEY?.trim()) {
+      console.warn(
+        "⚠️ MATCH_API_STARS_PAYMEE bor, lekin STARS_PAYMEE_API_URL / STARS_PAYMEE_API_KEY yo'q — yetkazish ishlamaydi"
+      );
+    } else {
+      console.log("✅ Paymee Partner API .env sozlangan");
     }
   }
 
@@ -75,7 +87,9 @@ function validateEnv() {
   }
 
   console.log("✅ .env asosiy kalitlar tekshirildi");
-  console.log(`   PORT=${port} | USDT match: ${process.env.MATCH_API_STARS_USDT ? "bor" : "yo'q"}`);
+  console.log(
+    `   PORT=${port} | Paymee match: ${process.env.MATCH_API_STARS_PAYMEE ? "bor" : "yo'q"} | USDT: ${process.env.MATCH_API_STARS_USDT ? "bor" : "yo'q"}`
+  );
 }
 
 /** starspaymeeorg: ishga tushishda Fragment cookie + hamyon tekshiruvi */
@@ -98,9 +112,23 @@ async function checkFragmentOnBoot() {
 
     const cookieCheck = await verifyFragmentCookies(bootPool);
     if (cookieCheck.ok) {
-      console.log("✅ Fragment cookie/session: HTTP tekshiruv OK");
+      console.log(
+        `✅ Fragment cookie/session: OK (HTTP ${cookieCheck.http_check?.status ?? cookieCheck.status ?? 200})`
+      );
+      if (cookieCheck.pyfragment_check && !cookieCheck.pyfragment_check.ok) {
+        console.warn(
+          "⚠️ Python verify ikkilamchi:",
+          cookieCheck.pyfragment_check.error || "javob o'qilmadi (cookie HTTP baribir OK)"
+        );
+      }
     } else {
-      console.error("❌ Fragment cookie/session:", cookieCheck.error || cookieCheck.status);
+      console.error(
+        "❌ Fragment cookie/session:",
+        cookieCheck.error || `HTTP ${cookieCheck.status ?? "?"}`
+      );
+      if (cookieCheck.hints?.length) {
+        cookieCheck.hints.forEach((h) => console.error("   →", h));
+      }
     }
 
     const pay = (process.env.FRAGMENT_PAYMENT_METHOD || "ton").trim().toLowerCase();
@@ -144,13 +172,14 @@ async function validatePythonFragmentDeps() {
 async function runCleanup() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
-    console.log("🧹 Pending orderlar tozalanmoqda...");
+    console.log("🧹 15 daqiqadan eski pending orderlar expired qilinmoqda...");
     const updateQuery = await pool.query(
       `UPDATE orders
        SET payment_status = 'expired', status = 'expired'
-       WHERE payment_status = 'pending' OR status = 'pending'`
+       WHERE (payment_status = 'pending' OR status = 'pending')
+         AND created_at < NOW() - INTERVAL '15 minutes'`
     );
-    console.log(`✅ ${updateQuery.rowCount} ta order expired qilindi`);
+    console.log(`✅ ${updateQuery.rowCount} ta eski pending expired (yangi pending saqlanadi)`);
   } catch (err) {
     console.error("❌ Tozalash xatosi:", err.message);
   } finally {
