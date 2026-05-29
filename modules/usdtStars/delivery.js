@@ -2,6 +2,7 @@ import {
   buyStarsViaFragment,
   isFragmentCookieError,
   isFragmentPythonSetupError,
+  isFragmentWalletConfigError,
 } from "./fragmentDelivery.js";
 import { notifyFragmentDeliveryIssue } from "./fragmentNotify.js";
 
@@ -41,22 +42,20 @@ export async function sendStarsViaFragment(order, ctx) {
     const errMsg = result.error || "";
 
     if (!result.success) {
-      if (isFragmentPythonSetupError(errMsg)) {
-        await pool.query(
-          `UPDATE orders SET status = 'processing', payment_status = 'paid' WHERE id = $1`,
-          [orderId]
-        );
-        await notifyFragmentDeliveryIssue(ctx, order, errMsg, "stars");
-        throw new Error(errMsg);
-      }
+      const retryable =
+        isFragmentPythonSetupError(errMsg) ||
+        isFragmentWalletConfigError(errMsg) ||
+        isFragmentCookieError(errMsg);
 
-      if (isFragmentCookieError(errMsg)) {
+      if (retryable) {
         await pool.query(
           `UPDATE orders SET status = 'processing', payment_status = 'paid' WHERE id = $1`,
           [orderId]
         );
         await notifyFragmentDeliveryIssue(ctx, order, errMsg, "stars");
-        sendUnifiedChannelNotification(order, "stars_usdt", true).catch(() => {});
+        if (isFragmentCookieError(errMsg)) {
+          sendUnifiedChannelNotification(order, "stars_usdt", true).catch(() => {});
+        }
         throw new Error(errMsg);
       }
 

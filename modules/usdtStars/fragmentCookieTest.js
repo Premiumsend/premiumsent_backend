@@ -9,6 +9,7 @@ import {
 } from "../tokens/tokensDb.js";
 import { verifyFragmentCookiesHttp } from "./fragmentDelivery.js";
 import { describeFragmentProxy } from "./fragmentProxy.js";
+import { walletEnvDiagnostics } from "./walletEnv.js";
 
 export function checkTorPort9050(timeoutMs = 3000) {
   return new Promise((resolve) => {
@@ -65,6 +66,7 @@ export async function getFragmentCookieStatus(pool) {
 
   return {
     env: getFragmentEnvDiagnostics(),
+    wallet: walletEnvDiagnostics(),
     env_fingerprint: fragmentTokenFingerprint(envTokens),
     db_fingerprint: fragmentTokenFingerprint(dbTokens),
     env_ready: Boolean(envTokens.fragment_ssid && envTokens.fragment_token),

@@ -16,9 +16,15 @@ import {
 } from "../settings/settingsDb.js";
 import { fragmentFetch, describeFragmentProxy } from "./fragmentProxy.js";
 import { resolvePythonCommand } from "./pythonPath.js";
+import {
+  hasWalletEnv,
+  validateFragmentWalletEnv,
+  walletEnvDiagnostics,
+} from "./walletEnv.js";
 
 export { describeFragmentProxy };
 export { resolvePythonCommand };
+export { walletEnvDiagnostics, validateFragmentWalletEnv };
 
 async function resolveFragmentPaymentMethod(pool, getFragmentPaymentMethod) {
   if (typeof getFragmentPaymentMethod === "function") {
@@ -37,13 +43,21 @@ function pythonCommand() {
   return resolvePythonCommand();
 }
 
-function hasWalletEnv() {
-  return Boolean(process.env.SEED?.trim() && process.env.API_KEY?.trim());
+export function isFragmentWalletConfigError(message) {
+  const s = String(message || "").toLowerCase();
+  return (
+    s.includes("mnemonic") ||
+    s.includes("seed mnemonic") ||
+    s.includes("seed noto") ||
+    (s.includes("seed") && s.includes("12, 18"))
+  );
 }
 
 export function isFragmentCookieError(message) {
   const s = String(message || "").toLowerCase();
-  if (isFragmentPythonSetupError(message)) return false;
+  if (isFragmentPythonSetupError(message) || isFragmentWalletConfigError(message)) {
+    return false;
+  }
   return (
     s.includes("403") ||
     s.includes("cookie") ||
@@ -69,6 +83,15 @@ export function isFragmentPythonSetupError(message) {
 export function summarizeFragmentCliError(raw) {
   const text = String(raw || "").trim();
   if (!text) return "Fragment CLI javob bermadi";
+
+  if (/invalid mnemonic/i.test(text)) {
+    const m = text.match(/got (\d+)/i);
+    const n = m ? m[1] : "?";
+    return (
+      `SEED mnemonic noto'g'ri (${n} so'z). Fragment hamyon seed: aynan 12, 18 yoki 24 so'z. ` +
+      `Qo'shimcha probel/bo'sh so'z yo'qolmasin.`
+    );
+  }
 
   const modMatch = text.match(/No module named ['"]([^'"]+)['"]/i);
   if (modMatch) {
@@ -260,8 +283,9 @@ export async function buyStarsViaFragment(recipientUsername, amount, pool, opts 
   if (!Number.isInteger(stars) || stars < 50 || stars > 10000) {
     return { success: false, error: "Stars 50–10000 oralig'ida bo'lishi kerak" };
   }
-  if (!hasWalletEnv()) {
-    return { success: false, error: "SEED va API_KEY .env da kerak" };
+  const wallet = validateFragmentWalletEnv();
+  if (!wallet.ok) {
+    return { success: false, error: wallet.error };
   }
 
   const { tokens, source: tokenSource } = await resolveFragmentTokens(pool, "auto");
@@ -311,8 +335,9 @@ export async function buyPremiumViaFragment(recipientUsername, months, pool, opt
   if (![3, 6, 12].includes(m)) {
     return { success: false, error: "Premium: months 3, 6 yoki 12 bo'lishi kerak" };
   }
-  if (!hasWalletEnv()) {
-    return { success: false, error: "SEED va API_KEY .env da kerak" };
+  const wallet = validateFragmentWalletEnv();
+  if (!wallet.ok) {
+    return { success: false, error: wallet.error };
   }
 
   const { tokens, source: tokenSource } = await resolveFragmentTokens(pool, "auto");

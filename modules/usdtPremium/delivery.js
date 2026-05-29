@@ -2,6 +2,7 @@ import {
   buyPremiumViaFragment,
   isFragmentCookieError,
   isFragmentPythonSetupError,
+  isFragmentWalletConfigError,
 } from "../usdtStars/fragmentDelivery.js";
 import { notifyFragmentDeliveryIssue } from "../usdtStars/fragmentNotify.js";
 import { usdtPremiumSlotKey } from "./orderCreate.js";
@@ -42,7 +43,11 @@ export async function sendPremiumViaFragment(order, ctx) {
     const errMsg = result.error || "";
 
     if (!result.success) {
-      if (isFragmentPythonSetupError(errMsg) || isFragmentCookieError(errMsg)) {
+      if (
+        isFragmentPythonSetupError(errMsg) ||
+        isFragmentWalletConfigError(errMsg) ||
+        isFragmentCookieError(errMsg)
+      ) {
         await pool.query(
           `UPDATE orders SET status = 'processing', payment_status = 'paid' WHERE id = $1`,
           [orderId]
@@ -86,7 +91,8 @@ export async function sendPremiumViaFragment(order, ctx) {
 
     if (
       !isFragmentCookieError(err.message) &&
-      !isFragmentPythonSetupError(err.message)
+      !isFragmentPythonSetupError(err.message) &&
+      !isFragmentWalletConfigError(err.message)
     ) {
       await pool.query("UPDATE orders SET status='error' WHERE id=$1", [orderId]).catch(() => {});
       releasePriceSlotByOrderId(orderId, usdtPremiumSlotKey(months));

@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { validateFragmentWalletEnv } from "./modules/usdtStars/walletEnv.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -50,9 +51,12 @@ function validateEnv() {
     }
   }
 
-  if (process.env.STARS_PURCHASE_MODE === "fragment") {
-    if (!process.env.SEED?.trim() || !process.env.API_KEY?.trim()) {
-      console.warn("⚠️ STARS_PURCHASE_MODE=fragment, lekin SEED yoki API_KEY .env da yo'q");
+  if (process.env.SEED?.trim() || process.env.MATCH_API_STARS_USDT) {
+    const w = validateFragmentWalletEnv();
+    if (!w.ok) {
+      console.error(`❌ Fragment hamyon: ${w.error}`);
+    } else {
+      console.log(`✅ Fragment SEED: ${w.wordCount} so'z (to'g'ri)`);
     }
   }
 
