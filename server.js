@@ -2957,14 +2957,21 @@ app.get("/api/transactions/:id", telegramAuth, async (req, res) => {
 // ======================
 app.post("/api/payments/match", internalAuth, async (req, res) => {
   try {
-    const { card_last4, amount } = req.body;
-    if (!card_last4 || !amount)
+    const { card_last4, amount, allowed_order_types } = req.body;
+    if (!card_last4 || amount == null || amount === "")
       return res.status(400).json({ error: "card_last4 va amount kerak" });
-    // 🔐 ATOMIC UPDATE - orders jadvalidan
     const matchAmount = parseInt(amount, 10);
     if (!matchAmount || matchAmount <= 0) {
       return res.status(400).json({ error: "amount noto'g'ri" });
     }
+
+    const typeFilter = (
+      Array.isArray(allowed_order_types) && allowed_order_types.length > 0
+        ? allowed_order_types
+        : ["stars"]
+    ).filter((t) =>
+      ["stars", "stars_usdt", "premium", "premium_usdt", "gift"].includes(String(t))
+    );
 
     const updated = await pool.query(
       `UPDATE orders
@@ -2975,36 +2982,49 @@ app.post("/api/payments/match", internalAuth, async (req, res) => {
          WHERE summ = $1 
            AND payment_status = 'pending'
            AND status = 'pending'
-           AND order_type = 'stars'
+           AND order_type = ANY($2::text[])
            AND created_at >= (NOW() AT TIME ZONE 'Asia/Tashkent') - INTERVAL '15 minutes'
          ORDER BY id DESC 
          LIMIT 1
          FOR UPDATE SKIP LOCKED
        )
        RETURNING *`,
-      [matchAmount]
+      [matchAmount, typeFilter]
     );
     if (!updated.rows.length)
       return res.status(404).json({ message: "Pending payment not found" });
     const order = updated.rows[0];
     console.log(`🎉 To'lov tasdiqlandi: #${order.id} | ${order.summ} so'm | ${order.order_type}`);
-    // 🎁 Turga qarab delivery
-    if (order.order_type === 'stars') {
-      processReferralBonus(order.recipient_username, order.type_amount, order.id)
-        .catch(err => console.error("❌ Referral bonus error:", err.message));
+    if (order.order_type === "stars") {
+      processReferralBonus(order.recipient_username, order.type_amount, order.id).catch(
+        (err) => console.error("❌ Referral bonus error:", err.message)
+      );
       sendStarsToUser(order)
-        .then(tx => {
-          console.log(`🌟 ${order.recipient_username} ga ${order.type_amount}⭐ yuborildi! TxID: ${tx}`);
+        .then((tx) => {
+          console.log(
+            `🌟 ${order.recipient_username} ga ${order.type_amount}⭐ yuborildi! TxID: ${tx}`
+          );
         })
-        .catch(err => {
-          console.error("❌ Yulduz yuborishda xato:", err.message);
-        });
-    } else if (order.order_type === 'premium') {
-      deliverPremiumOrder(order)
-        .catch(err => console.error("❌ Premium delivery error:", err.message));
-    } else if (order.order_type === 'gift') {
-      sendGiftToUser(order)
-        .catch(err => console.error("❌ Gift delivery error:", err.message));
+        .catch((err) => console.error("❌ Yulduz yuborishda xato:", err.message));
+    } else if (order.order_type === "stars_usdt") {
+      processReferralBonus(order.recipient_username, order.type_amount, order.id).catch(
+        (err) => console.error("❌ Referral bonus error:", err.message)
+      );
+      sendStarsViaFragment(order, usdtStarsCtx).catch((err) => {
+        console.error("❌ Fragment stars yuborishda xato:", err.message);
+      });
+    } else if (order.order_type === "premium_usdt") {
+      sendPremiumViaFragment(order, usdtPremiumCtx).catch((err) => {
+        console.error("❌ Fragment premium yuborishda xato:", err.message);
+      });
+    } else if (order.order_type === "premium") {
+      deliverPremiumOrder(order).catch((err) =>
+        console.error("❌ Premium delivery error:", err.message)
+      );
+    } else if (order.order_type === "gift") {
+      sendGiftToUser(order).catch((err) =>
+        console.error("❌ Gift delivery error:", err.message)
+      );
     }
     // Backward compatible response
     res.json({

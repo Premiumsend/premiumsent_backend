@@ -48,5 +48,7 @@ export function walletEnvDiagnostics() {
     seed_word_count: wordCount,
     seed_words_valid: validWords,
     wallet_ready: Boolean(seed && apiKey && validWords),
+    api_key_hint:
+      "TonAPI kalit (https://tonconsole.com) — Fragment emas; SEED bilan bir xil TON hamyon",
   };
 }

@@ -12,7 +12,8 @@
     "fragment:install": "npm install socks-proxy-agent && node scripts/setup-python-venv.mjs",
     "fragment:check-python": "node scripts/check-python-deps.js",
     "fragment:test-cookie": "node scripts/test-fragment-cookie.js",
-    "fragment:verify": "node scripts/run-fragment-cli.mjs --verify-cookies"
+    "fragment:verify": "node scripts/run-fragment-cli.mjs --verify-cookies",
+    "fragment:diagnose": "node scripts/run-fragment-diagnose.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -1,4 +1,4 @@
 python-dotenv>=1.0.0
-pyfragment>=0.1.0
+pyfragment>=1.0.0
 psycopg2-binary>=2.9.0
 PySocks>=1.7.1

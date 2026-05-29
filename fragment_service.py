@@ -114,6 +114,14 @@ def _build_client():
     return FragmentClient(seed=seed, api_key=api_key, cookies=cookies)
 
 
+def normalize_fragment_username(username: str) -> str:
+    """pyfragment: purchase_stars('@username', ...)"""
+    u = (username or "").strip().lstrip("@")
+    if not u:
+        raise ValueError("Telegram username kerak")
+    return f"@{u}"
+
+
 def _normalize_payment(method: str) -> str:
     m = (method or "ton").strip().lower()
     if m in ("usdt", "usd", "usdt-ton", "usdt_ton"):
@@ -239,11 +247,49 @@ async def verify_fragment_cookies() -> dict:
     return await asyncio.to_thread(verify_fragment_cookies_sync)
 
 
+async def diagnose_fragment(username: str | None = None) -> dict:
+    """Hamyon balansi + ixtiyoriy username (sotib olmaydi)."""
+    out: dict = {"ok": False}
+    try:
+        _ensure_fragment_proxy()
+        uname = normalize_fragment_username(username) if username else None
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    try:
+        async with _build_client() as client:
+            try:
+                wallet = await client.get_wallet()
+                out["wallet"] = {
+                    "balance_ton": str(getattr(wallet, "balance_ton", "?")),
+                    "balance_usdt": str(getattr(wallet, "balance_usdt", "?")),
+                }
+            except Exception as e:
+                out["wallet_error"] = str(e)
+
+            if uname:
+                out["recipient_normalized"] = uname
+                try:
+                    search = await client.search_stars_recipient(uname)
+                    out["recipient_search"] = search
+                except AttributeError:
+                    out["recipient_search"] = "search_stars_recipient mavjud emas (pyfragment yangilang)"
+                except Exception as e:
+                    out["recipient_search_error"] = str(e)
+
+            out["ok"] = "wallet" in out and "wallet_error" not in out
+            out["api_key_hint"] = "API_KEY = TonAPI kalit (https://tonconsole.com), SEED bilan bir xil hamyon"
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
 async def buy_stars(recipient: str, amount: int, payment_method: str = "ton") -> dict:
     try:
         _ensure_fragment_proxy()
+        recipient_at = normalize_fragment_username(recipient)
         async with _build_client() as client:
-            result = await _purchase_stars(client, recipient, amount, payment_method)
+            result = await _purchase_stars(client, recipient_at, amount, payment_method)
         txid = getattr(result, "transaction_id", None) or str(result)
         return {"success": True, "transaction_id": txid}
     except Exception as e:
@@ -254,14 +300,15 @@ async def buy_stars(recipient: str, amount: int, payment_method: str = "ton") ->
 async def buy_premium(recipient: str, months: int, payment_method: str = "ton") -> dict:
     try:
         _ensure_fragment_proxy()
+        recipient_at = normalize_fragment_username(recipient)
         async with _build_client() as client:
             pm = _normalize_payment(payment_method)
             try:
                 result = await client.purchase_premium(
-                    recipient, months=months, payment_method=pm
+                    recipient_at, months=months, payment_method=pm
                 )
             except TypeError:
-                result = await client.purchase_premium(recipient, months)
+                result = await client.purchase_premium(recipient_at, months)
         txid = getattr(result, "transaction_id", None) or str(result)
         return {"success": True, "transaction_id": txid}
     except Exception as e:

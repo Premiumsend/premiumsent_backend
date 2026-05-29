@@ -10,6 +10,15 @@ import { fileURLToPath } from "url";
 import pg from "pg";
 import dotenv from "dotenv";
 import { validateFragmentWalletEnv } from "./modules/usdtStars/walletEnv.js";
+import {
+  fragmentEnvReadyAsync,
+  verifyFragmentCookies,
+} from "./modules/usdtStars/fragmentDelivery.js";
+import {
+  ensureTokensTable,
+  seedFragmentTokensFromEnvIfEmpty,
+  syncFragmentTokensFromEnvIfMissing,
+} from "./modules/tokens/tokensDb.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -67,6 +76,42 @@ function validateEnv() {
 
   console.log("✅ .env asosiy kalitlar tekshirildi");
   console.log(`   PORT=${port} | USDT match: ${process.env.MATCH_API_STARS_USDT ? "bor" : "yo'q"}`);
+}
+
+/** starspaymeeorg: ishga tushishda Fragment cookie + hamyon tekshiruvi */
+async function checkFragmentOnBoot() {
+  if (!process.env.DATABASE_URL?.trim()) return;
+
+  const bootPool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await ensureTokensTable(bootPool);
+    await seedFragmentTokensFromEnvIfEmpty(bootPool);
+    await syncFragmentTokensFromEnvIfMissing(bootPool);
+
+    if (!(await fragmentEnvReadyAsync(bootPool))) {
+      console.warn(
+        "⚠️ Fragment: SEED/API_KEY .env yoki tokens jadvalida fragment_ssid/token to'ldiring"
+      );
+      return;
+    }
+    console.log("✅ Fragment: tokens + hamyon (.env) topildi");
+
+    const cookieCheck = await verifyFragmentCookies(bootPool);
+    if (cookieCheck.ok) {
+      console.log("✅ Fragment cookie/session: HTTP tekshiruv OK");
+    } else {
+      console.error("❌ Fragment cookie/session:", cookieCheck.error || cookieCheck.status);
+    }
+
+    const pay = (process.env.FRAGMENT_PAYMENT_METHOD || "ton").trim().toLowerCase();
+    console.log(
+      `💰 Fragment to'lov usuli (.env): ${pay === "usdt_ton" || pay === "usdt" ? "usdt_ton" : "ton"} (admin settings ham bor)`
+    );
+  } catch (e) {
+    console.error("❌ Fragment boot tekshiruv:", e.message);
+  } finally {
+    await bootPool.end();
+  }
 }
 
 async function validatePythonFragmentDeps() {
@@ -174,6 +219,7 @@ process.on("SIGTERM", () => shutdownAll("SIGTERM"));
 // Ishga tushirish
 // =============================
 validateEnv();
+await checkFragmentOnBoot();
 await validatePythonFragmentDeps();
 await runCleanup();
 
@@ -187,4 +233,7 @@ console.log("\n✅ Hammasi ishga tushirildi:");
 console.log("   • API:        server.js (PORT=" + (process.env.PORT || 5001) + ")");
 console.log("   • Bot:        token.js");
 console.log("   • SMS/Match:  balanceChecker.js (HTTP :5002)");
+console.log("   • /stars      → RobynHood");
+console.log("   • /usdtstars  → Fragment Stars (TON — admin/settings)");
+console.log("   • /usdtpremium → Fragment Premium (TON)");
 console.log("   To'xtatish: Ctrl+C\n");

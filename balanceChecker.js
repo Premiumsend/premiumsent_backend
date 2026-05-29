@@ -222,10 +222,20 @@ export async function initBalanceClient() {
                 });
 
                 if (!text.includes("➕")) return;
-                if (!text.includes(TARGET_CARD_SUFFIX)) return;
+                if (!TARGET_CARD_SUFFIX) {
+                    console.warn("⚠️ TARGET_CARD_SUFFIX yo'q — SMS qayta ishlanmaydi");
+                    return;
+                }
 
                 const parsed = parsePayment(text);
                 if (!parsed) return;
+
+                if (parsed.card_last4 !== TARGET_CARD_SUFFIX) {
+                    console.log(
+                        `⏭️ Boshqa karta: SMS ***${parsed.card_last4}, kutilgan ***${TARGET_CARD_SUFFIX}`
+                    );
+                    return;
+                }
 
                 console.log("💳 To'lov aniqlandi:", parsed);
 
@@ -241,16 +251,23 @@ export async function initBalanceClient() {
                     "X-Internal-Key": INTERNAL_SECRET,
                 };
 
-                // 1) RobynHood Stars
+                // 1) RobynHood Stars (faqat order_type=stars — gift/premium bilan aralashmasin)
                 let res = await fetch(MATCH_API_STARS, {
                     method: "POST",
                     headers: matchHeaders,
-                    body: JSON.stringify(parsed),
+                    body: JSON.stringify({
+                        ...parsed,
+                        allowed_order_types: ["stars"],
+                    }),
                 });
 
-                // 2) Fragment USDT Stars
+                // 2) Fragment Stars (/usdtstars)
                 if (!res.ok && MATCH_API_STARS_USDT) {
-                    console.log("⭐ Robyn stars topilmadi → USDT stars urinyapti...");
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "⭐ Robyn stars topilmadi → Fragment stars urinyapti...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
                     res = await fetch(MATCH_API_STARS_USDT, {
                         method: "POST",
                         headers: matchHeaders,
@@ -258,23 +275,27 @@ export async function initBalanceClient() {
                     });
                 }
 
-                // 3) RobynHood Premium
-                if (!res.ok) {
-                    console.log("⭐ Starsda topilmadi → PREMIUM urinyapti...");
-                    res = await fetch(MATCH_API_PREMIUM, {
-                        method: "POST",
-                        headers: matchHeaders,
-                        body: JSON.stringify(parsed),
-                    });
-                }
-
-                // 4) Fragment USDT Premium (faqat summa)
+                // 3) Fragment Premium — Robyn premium dan OLDIN (starspaymeeorg tartibi)
                 if (!res.ok && MATCH_API_PREMIUM_USDT) {
-                    console.log("💎 Premium topilmadi → USDT premium urinyapti...");
+                    const errBody = await res.text().catch(() => "");
+                    console.log(
+                        "💎 Fragment premium urinyapti...",
+                        errBody ? errBody.slice(0, 200) : ""
+                    );
                     res = await fetch(MATCH_API_PREMIUM_USDT, {
                         method: "POST",
                         headers: matchHeaders,
                         body: JSON.stringify({ amount: parsed.amount }),
+                    });
+                }
+
+                // 4) RobynHood Premium
+                if (!res.ok && MATCH_API_PREMIUM) {
+                    console.log("💎 Fragment premium topilmadi → Robyn premium...");
+                    res = await fetch(MATCH_API_PREMIUM, {
+                        method: "POST",
+                        headers: matchHeaders,
+                        body: JSON.stringify(parsed),
                     });
                 }
 
