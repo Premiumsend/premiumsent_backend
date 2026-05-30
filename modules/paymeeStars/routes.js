@@ -4,6 +4,10 @@ import { getPaymeeStarsPrice } from "./price.js";
 import { paymeeStarsSearch } from "./search.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 import {
+  sendGuardFailure,
+  validatePaymentCardLast4,
+} from "../payments/clientAmountGuard.js";
+import {
   checkPaymeeHealth,
   getPaymeeBalance,
   getPaymeePricing,
@@ -23,6 +27,11 @@ export async function matchPaymeeStarsPayment(req, res, ctx) {
     const matchAmount = parseInt(amount, 10);
     if (!matchAmount || matchAmount <= 0) {
       return res.status(400).json({ error: "amount noto'g'ri" });
+    }
+
+    const cardCheck = validatePaymentCardLast4(card_last4);
+    if (!cardCheck.ok) {
+      return sendGuardFailure(res, cardCheck);
     }
 
     const updated = await pool.query(

@@ -7,6 +7,12 @@ import {
   checkPaymeeFulfillment,
   sendPaymeeInsufficientResponse,
 } from "../paymeeClient/availability.js";
+import {
+  rejectForbiddenClientPriceFields,
+  sendGuardFailure,
+  validateClientFinalAmount,
+  validateClientSlotPrice,
+} from "../payments/clientAmountGuard.js";
 
 const ORDER_TYPE = "premium_paymee";
 const VALID_MONTHS = [3, 6, 12];
@@ -48,6 +54,11 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
   const priceMap = { 3: PREMIUM_3, 6: PREMIUM_6, 12: PREMIUM_12 };
 
   try {
+    const forbidden = rejectForbiddenClientPriceFields(req.body);
+    if (!forbidden.ok) {
+      return sendGuardFailure(res, forbidden);
+    }
+
     const { username, months, applied_promocode } = req.body;
 
     const maxPendingOrders = 3;
@@ -151,6 +162,11 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
       });
     }
 
+    const slotCheck = validateClientSlotPrice(req.body, amount);
+    if (!slotCheck.ok) {
+      return sendGuardFailure(res, slotCheck);
+    }
+
     const tempReservationId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     priceSlots[slotKey][priceSlotIndex] = {
       orderId: tempReservationId,
@@ -195,6 +211,12 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
             }
           }
         }
+      }
+
+      const finalCheck = validateClientFinalAmount(req.body, finalAmount);
+      if (!finalCheck.ok) {
+        await client.query("ROLLBACK");
+        return sendGuardFailure(res, finalCheck);
       }
 
       const uniqueSum = await generateUniqueOrderSum(finalAmount, client);

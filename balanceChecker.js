@@ -273,7 +273,10 @@ export async function initBalanceClient() {
                     res = await fetch(MATCH_API_PREMIUM_PAYMEE, {
                         method: "POST",
                         headers: matchHeaders,
-                        body: JSON.stringify({ amount: parsed.amount }),
+                        body: JSON.stringify({
+                            amount: parsed.amount,
+                            card_last4: parsed.card_last4,
+                        }),
                     });
                 }
 

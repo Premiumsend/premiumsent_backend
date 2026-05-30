@@ -63,6 +63,10 @@ import {
   registerUserbotStarRefillRoutes,
 } from "./modules/userbotStarRefill/index.js";
 import { sendOrdersChannelMessage } from "./modules/telegram/channelNotify.js";
+import {
+  rejectForbiddenClientPriceFields,
+  sendGuardFailure,
+} from "./modules/payments/clientAmountGuard.js";
 dotenv.config();
 const { Pool } = pkg;
 const app = express();
@@ -5818,6 +5822,11 @@ const GIFT_STARS_MAP = {
 // ======================
 app.post("/api/gift/order", orderLimiter, telegramAuth, async (req, res) => {
   try {
+    const priceForbidden = rejectForbiddenClientPriceFields(req.body);
+    if (!priceForbidden.ok) {
+      return sendGuardFailure(res, priceForbidden);
+    }
+
     const { recipientUsername, giftId, anonymous, comment } = req.body;
 
     const maxPendingOrders = 3;

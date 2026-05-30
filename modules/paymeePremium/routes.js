@@ -3,6 +3,10 @@ import { sendPremiumViaPaymee } from "./delivery.js";
 import { getPaymeePremiumPrice } from "./price.js";
 import { paymeePremiumSearch } from "./search.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
+import {
+  sendGuardFailure,
+  validatePaymentCardLast4,
+} from "../payments/clientAmountGuard.js";
 
 const ORDER_TYPE = "premium_paymee";
 
@@ -10,13 +14,20 @@ export async function matchPaymeePremiumPayment(req, res, ctx) {
   const { pool } = ctx;
 
   try {
-    const { amount } = req.body;
+    const { amount, card_last4 } = req.body;
     if (amount == null || amount === "") {
       return res.status(400).json({ error: "amount kerak" });
     }
     const matchAmount = parseInt(amount, 10);
     if (!matchAmount || matchAmount <= 0) {
       return res.status(400).json({ error: "amount noto'g'ri" });
+    }
+
+    if (card_last4) {
+      const cardCheck = validatePaymentCardLast4(card_last4);
+      if (!cardCheck.ok) {
+        return sendGuardFailure(res, cardCheck);
+      }
     }
 
     const updated = await pool.query(
