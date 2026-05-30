@@ -7467,10 +7467,12 @@ registerUsdtPremiumRoutes(app, usdtPremiumCtx);
 const paymeeStarsCtx = {
   ...usdtStarsCtx,
   usdtSlotKey: paymeeSlotKey,
+  searchLimiter,
 };
 
 const paymeePremiumCtx = {
   ...usdtPremiumCtx,
+  searchLimiter,
 };
 
 registerPaymeeStarsRoutes(app, paymeeStarsCtx);

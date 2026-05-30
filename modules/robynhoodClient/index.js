@@ -1,4 +1,10 @@
 export {
+  extractRobynPhotoUrl,
+  mapRobynSearchToProfile,
+  searchRobynRecipient,
+} from "./search.js";
+
+export {
   robynhoodConfigured,
   robynRequest,
   robynIdempotencyKey,

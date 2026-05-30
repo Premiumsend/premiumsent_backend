@@ -23,3 +23,8 @@ export {
   sendPaymeeInsufficientResponse,
   PAYMEE_OUT_OF_STOCK_MESSAGES,
 } from "./availability.js";
+export {
+  searchPaymeeRecipient,
+  mapPaymeeSearchToProfile,
+  extractPhotoUrl,
+} from "./search.js";

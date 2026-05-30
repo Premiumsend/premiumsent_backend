@@ -1,6 +1,7 @@
 import { createPaymeeStarsOrder } from "./orderCreate.js";
 import { sendStarsViaPaymee } from "./delivery.js";
 import { getPaymeeStarsPrice } from "./price.js";
+import { paymeeStarsSearch } from "./search.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 import {
   checkPaymeeHealth,
@@ -77,7 +78,7 @@ export async function matchPaymeeStarsPayment(req, res, ctx) {
 }
 
 export function registerPaymeeStarsRoutes(app, ctx) {
-  const { orderLimiter, telegramAuth, internalSecretAuth, adminAuth } = ctx;
+  const { orderLimiter, searchLimiter, telegramAuth, internalSecretAuth, adminAuth } = ctx;
 
   app.get("/api/admin/paymee/status", adminAuth, async (_req, res) => {
     try {
@@ -108,6 +109,10 @@ export function registerPaymeeStarsRoutes(app, ctx) {
 
   app.get("/api/paymee-stars/price/:stars", (req, res) => getPaymeeStarsPrice(req, res, ctx));
 
+  app.post("/api/paymee-stars/search", searchLimiter, telegramAuth, (req, res) =>
+    paymeeStarsSearch(req, res)
+  );
+
   app.post("/api/paymee-stars/order", orderLimiter, telegramAuth, (req, res) =>
     createPaymeeStarsOrder(req, res, ctx)
   );
@@ -117,6 +122,6 @@ export function registerPaymeeStarsRoutes(app, ctx) {
   );
 
   console.log(
-    "✅ Paymee Stars moduli: /api/paymee-stars/price, /api/paymee-stars/order, /api/paymee-stars/match"
+    "✅ Paymee Stars moduli: /api/paymee-stars/price, /api/paymee-stars/search, /api/paymee-stars/order, /api/paymee-stars/match"
   );
 }

@@ -1,6 +1,7 @@
 import { createPaymeePremiumOrder } from "./orderCreate.js";
 import { sendPremiumViaPaymee } from "./delivery.js";
 import { getPaymeePremiumPrice } from "./price.js";
+import { paymeePremiumSearch } from "./search.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
 
 const ORDER_TYPE = "premium_paymee";
@@ -69,10 +70,14 @@ export async function matchPaymeePremiumPayment(req, res, ctx) {
 }
 
 export function registerPaymeePremiumRoutes(app, ctx) {
-  const { orderLimiter, telegramAuth, internalSecretAuth } = ctx;
+  const { orderLimiter, searchLimiter, telegramAuth, internalSecretAuth } = ctx;
 
   app.get("/api/paymee-premium/price/:months", (req, res) =>
     getPaymeePremiumPrice(req, res, ctx)
+  );
+
+  app.post("/api/paymee-premium/search", searchLimiter, telegramAuth, (req, res) =>
+    paymeePremiumSearch(req, res)
   );
 
   app.post("/api/paymee-premium/order", orderLimiter, telegramAuth, (req, res) =>
