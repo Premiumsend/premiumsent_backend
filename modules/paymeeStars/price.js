@@ -23,7 +23,9 @@ export async function getPaymeeStarsPrice(req, res, ctx) {
     return res.json({
       available: false,
       code: paymeeCheck.code,
+      product: "stars",
       message: paymeeCheck.message,
+      error: paymeeCheck.message,
     });
   }
 

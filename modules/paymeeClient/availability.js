@@ -6,11 +6,11 @@ import {
 
 export const PAYMEE_OUT_OF_STOCK_MESSAGES = {
   stars:
-    "⭐ Afsuski, botda Stars tugab qoldi.\n\nAdmin hozir to'ldirmoqda — birozdan keyin yana urinib ko'ring! 🙏",
+    "Afsuski, botda Stars tugab qoldi. Admin hozir to'ldirmoqda — birozdan keyin yana urinib ko'ring!",
   premium:
-    "💎 Afsuski, botda Premium vaqtincha tugagan.\n\nBirozdan keyin qayta urinib ko'ring! ✨",
+    "Afsuski, botda Premium tugap qoldi. Admin hozir to'ldirmoqda — birozdan keyin yana urinib ko'ring!",
   gift:
-    "🎁 Afsuski, botda Gift tugab qoldi.\n\nBirozdan keyin yana urinib ko'ring! 🙏",
+    "Afsuski, botda sovga tugap qoldi. Admin hozir to'ldirmoqda — birozdan keyin yana urinib ko'ring!",
 };
 
 export function getPaymeeOutOfStockMessage(product) {
