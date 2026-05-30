@@ -2,9 +2,11 @@ import { getCachedSettings, loadSettings, setUserbotAutoRefill } from "../settin
 import { fetchUserbotStarsBalance } from "./balance.js";
 import { getUserbotRefillPublicConfig } from "./service.js";
 import { listRefills } from "./db.js";
+import { buildRefillSuccessMessage, notifyUserbotRefillChannel } from "./notify.js";
 
 export function registerUserbotStarRefillRoutes(app, ctx) {
-  const { pool, adminAuth } = ctx;
+  const { pool, adminAuth, bot, botToken, logChannelId } = ctx;
+  const channelCtx = { bot, botToken, logChannelId };
 
   app.get("/api/admin/userbot-refill/status", adminAuth, async (_req, res) => {
     try {
@@ -54,7 +56,31 @@ export function registerUserbotStarRefillRoutes(app, ctx) {
     }
   });
 
+  /** Kanalga test xabar — ERROR_LOG_CHANNEL_ID + BOT_TOKEN */
+  app.post("/api/admin/userbot-refill/test-channel", adminAuth, async (_req, res) => {
+    try {
+      const cfg = getUserbotRefillPublicConfig();
+      const balance = await fetchUserbotStarsBalance();
+      const msg = buildRefillSuccessMessage({
+        balanceBefore: balance ?? 0,
+        minBalance: cfg.min_balance,
+        refillStars: cfg.refill_stars,
+        recipient: cfg.refill_username,
+        txId: "TEST-" + Date.now(),
+        balanceAfter: balance,
+      });
+      const sent = await notifyUserbotRefillChannel(channelCtx, msg);
+      res.json({
+        success: sent.ok,
+        channel_id: logChannelId,
+        error: sent.error || null,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   console.log(
-    "✅ userbotStarRefill: /api/admin/userbot-refill/status, toggle, history"
+    "✅ userbotStarRefill: status, toggle, history, test-channel"
   );
 }

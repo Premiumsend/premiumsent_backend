@@ -17,6 +17,11 @@ import {
   insertRefillRecord,
   updateRefillRecord,
 } from "./db.js";
+import {
+  buildRefillErrorMessage,
+  buildRefillSuccessMessage,
+  notifyUserbotRefillChannel,
+} from "./notify.js";
 
 let refillInProgress = false;
 
@@ -34,7 +39,7 @@ export function getUserbotRefillPublicConfig() {
  * `orders` jadvaliga yozilmaydi — faqat `userbot_star_refills`.
  */
 export async function ensureUserbotStarRefillForGiftOrder(ctx, options = {}) {
-  const { pool, notifyOrdersChannel } = ctx;
+  const { pool } = ctx;
   const trigger = options.trigger || "gift_order";
 
   const settings = getCachedSettings();
@@ -124,16 +129,18 @@ export async function ensureUserbotStarRefillForGiftOrder(ctx, options = {}) {
       balance_after: balanceAfter,
     });
 
-    const msg =
-      `🤖 <b>Userbot avto-to'ldirish</b>\n\n` +
-      `⭐ Userbot balansi <b>${balanceBefore}</b> ⭐ edi (minimum: <b>${minBalance}</b>).\n\n` +
-      `✅ Paymee orqali <b>${refillStars}</b> ⭐ yuborildi → @${recipient}\n` +
-      `🆔 Tranzaksiya: <code>${txId}</code>\n` +
-      (balanceAfter != null ? `📊 Hozirgi balans: <b>${balanceAfter}</b> ⭐\n` : "") +
-      `\n📌 Sabab: gift buyurtmasi (balans past)`;
+    const msg = buildRefillSuccessMessage({
+      balanceBefore,
+      minBalance,
+      refillStars,
+      recipient,
+      txId,
+      balanceAfter,
+    });
 
-    if (notifyOrdersChannel) {
-      await notifyOrdersChannel(msg);
+    const sent = await notifyUserbotRefillChannel(ctx, msg);
+    if (!sent.ok) {
+      console.error("❌ Userbot refill kanal xabari yuborilmadi:", sent.error);
     }
 
     console.log(
@@ -161,13 +168,16 @@ export async function ensureUserbotStarRefillForGiftOrder(ctx, options = {}) {
       });
     }
 
-    if (notifyOrdersChannel) {
-      await notifyOrdersChannel(
-        `⚠️ <b>Userbot avto-to'ldirish XATO</b>\n\n` +
-          `⭐ Balans: <b>${balanceBefore}</b> (min: ${minBalance})\n` +
-          `👤 Maqsad: @${recipient}, ${refillStars} ⭐\n` +
-          `❌ ${errMsg}`
-      );
+    const errMsgHtml = buildRefillErrorMessage({
+      balanceBefore,
+      minBalance,
+      refillStars,
+      recipient,
+      errMsg,
+    });
+    const sent = await notifyUserbotRefillChannel(ctx, errMsgHtml);
+    if (!sent.ok) {
+      console.error("❌ Userbot refill xato kanal xabari:", sent.error);
     }
 
     return {

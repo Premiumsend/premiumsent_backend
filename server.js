@@ -62,6 +62,7 @@ import {
   ensureUserbotStarRefillForGiftOrder,
   registerUserbotStarRefillRoutes,
 } from "./modules/userbotStarRefill/index.js";
+import { sendOrdersChannelMessage } from "./modules/telegram/channelNotify.js";
 dotenv.config();
 const { Pool } = pkg;
 const app = express();
@@ -1364,16 +1365,16 @@ Barchasi bir joyda — <b>StarsJoy</b>!`;
 
 // Buyurtmalar kanali xabari yuborish funksiyasi
 async function notifyOrdersChannel(message) {
-  if (!bot) {
-    console.log('❌ Bot ishga tushmagan, xabar yuborilmadi');
-    return;
+  const result = await sendOrdersChannelMessage({
+    text: message,
+    channelId: ORDERS_CHANNEL,
+    bot,
+    botToken: BOT_TOKEN,
+  });
+  if (!result.ok) {
+    console.error("❌ Orders channel:", result.error);
   }
-  try {
-    await bot.telegram.sendMessage(ORDERS_CHANNEL, message, { parse_mode: 'HTML' });
-    console.log('✅ Orders channel ga xabar yuborildi');
-  } catch (err) {
-    console.error('❌ Orders channel xabari yuborishda xato:', err.message);
-  }
+  return result;
 }
 
 /** Admin panel: qo'lda premium — ORDERS_CHANNEL (.env) ga BOT_TOKEN orqali */
@@ -5861,10 +5862,18 @@ app.post("/api/gift/order", orderLimiter, telegramAuth, async (req, res) => {
 
     // Userbot balansi < GIFT_BALANCE bo'lsa Paymee orqali @StarsjoySupport ga 50⭐ to'ldirish
     try {
-      await ensureUserbotStarRefillForGiftOrder(
-        { pool, notifyOrdersChannel },
+      const refillResult = await ensureUserbotStarRefillForGiftOrder(
+        {
+          pool,
+          bot,
+          botToken: BOT_TOKEN,
+          logChannelId: ERROR_LOG_CHANNEL_ID,
+        },
         { trigger: "gift_order" }
       );
+      if (refillResult?.action && refillResult.action !== "ok") {
+        console.log("📊 Userbot refill:", refillResult);
+      }
     } catch (refillErr) {
       console.error("⚠️ Userbot refill (gift order):", refillErr.message);
     }
@@ -7495,7 +7504,13 @@ registerPaymeePremiumRoutes(app, paymeePremiumCtx);
 registerRobynhoodAdminRoutes(app, { pool, adminAuth });
 
 registerSettingsRoutes(app, { pool, adminAuth });
-registerUserbotStarRefillRoutes(app, { pool, adminAuth });
+registerUserbotStarRefillRoutes(app, {
+  pool,
+  adminAuth,
+  bot,
+  botToken: BOT_TOKEN,
+  logChannelId: ERROR_LOG_CHANNEL_ID,
+});
 
 async function bootstrapAppData() {
   await ensureTokensTable(pool);
