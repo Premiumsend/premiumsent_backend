@@ -67,6 +67,12 @@ import {
   rejectForbiddenClientPriceFields,
   sendGuardFailure,
 } from "./modules/payments/clientAmountGuard.js";
+import { expiredPaymentNotifyText } from "./modules/supportContact.js";
+import { handlePremiumRecipientSearch } from "./modules/premium/recipientSearch.js";
+import {
+  checkPremiumRecipientEligibility,
+  sendPremiumEligibilityFailure,
+} from "./modules/premium/eligibility.js";
 dotenv.config();
 
 const BALANCE_CHECKER_PORT = parseInt(process.env.BALANCE_CHECKER_PORT, 10) || 6002;
@@ -411,23 +417,11 @@ async function loadPendingOrdersToCache() {
           try {
             let expiredNotificationText = '';
             if (row.order_type === 'stars') {
-              expiredNotificationText = `⚠️ Siz stars sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("stars sotib olish");
             } else if (row.order_type === 'gift') {
-              expiredNotificationText = `⚠️ Siz gift yuborishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("gift yuborish");
             } else if (row.order_type === 'premium') {
-              expiredNotificationText = `⚠️ Siz premium sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("premium sotib olish");
             }
             
             await bot.telegram.sendMessage(row.owner_user_id, expiredNotificationText);
@@ -668,23 +662,11 @@ setInterval(async () => {
           try {
             let expiredNotificationText = '';
             if (row.order_type === 'stars') {
-              expiredNotificationText = `⚠️ Siz stars sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("stars sotib olish");
             } else if (row.order_type === 'gift') {
-              expiredNotificationText = `⚠️ Siz gift yuborishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("gift yuborish");
             } else if (row.order_type === 'premium') {
-              expiredNotificationText = `⚠️ Siz premium sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              expiredNotificationText = expiredPaymentNotifyText("premium sotib olish");
             }
             
             await bot.telegram.sendMessage(row.owner_user_id, expiredNotificationText);
@@ -2944,11 +2926,7 @@ app.post("/api/order", orderLimiter, telegramAuth, async (req, res) => {
           const alreadyNotified = check.rows[0]?.expired_notified;
           if (ownerUserId && bot && !alreadyNotified) {
             try {
-              const expiredNotificationText = `⚠️ Siz stars sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              const expiredNotificationText = expiredPaymentNotifyText("stars sotib olish");
               await bot.telegram.sendMessage(ownerUserId, expiredNotificationText);
               await pool.query(
                 `UPDATE orders SET expired_notified = true WHERE id = $1`,
@@ -3483,97 +3461,7 @@ async function processPremiumReferralBonus(username, transactionId) {
 // 🔍 PREMIUM SEARCH (FULL LOG VERSION)
 //-----------------------
 app.post("/api/premium/search", searchLimiter, telegramAuth, async (req, res) => {
-  try {
-    let { username } = req.body;
-    console.log("\n================ PREMIUM SEARCH ================");
-    console.log("📥 Keldi username:", username);
-    if (!username) {
-      console.log("⛔ username yo‘q");
-      return res.status(400).json({ error: "username kerak" });
-    }
-    const clean = username.startsWith("@")
-      ? username.slice(1)
-      : username;
-    console.log("🧹 Tozalangan username:", clean);
-    // RobynHood API
-    console.log("🌐 Providerga so‘rov yuborilmoqda...");
-    const response = await fetch("https://robynhood.parssms.info/api/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": process.env.ROB_API_KEY,
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        product_type: "premium",
-        query: clean,
-        months: "3",
-      }),
-    });
-    console.log("📡 Provider status:", response.status);
-    const raw = await response.text();
-    console.log("📦 Provider RAW response:", raw);
-    // Provider offline -> "false"
-    if (raw.trim() === "false") {
-      console.log("❌ Provider OFFLINE yoki IP blok");
-      return res.status(503).json({
-        error: "Provider offline yoki IP bloklangan"
-      });
-    }
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch (err) {
-      console.log("❌ JSON parse xato:", err);
-      return res.status(502).json({
-        error: "Provider noto‘g‘ri format qaytardi",
-        raw
-      });
-    }
-    console.log("🔍 Provider JSON:", data);
-    if (!data.ok || !data.found) {
-      console.log("❌ found=false → Premium yo‘q yoki user topilmadi");
-      return res.status(404).json({
-        error: "❌ Premium mavjud emas yoki user yo‘q"
-      });
-    }
-    const found = data.found;
-    console.log("👤 found object:", found);
-    // 🆔 Provider ID fieldlarini tekshiramiz
-    const recipientId =
-      found.id ||
-      found.user_id ||
-      found.uid ||
-      found.recipient ||
-      found.telegram_id ||
-      null;
-    console.log("🆔 Aniqlangan recipient ID:", recipientId);
-    if (!recipientId) {
-      console.log("❌ Provider ID qaytarmadi!");
-      return res.status(404).json({
-        error: "Provider ID qaytarmadi — premium sotib bo‘lmaydi"
-      });
-    }
-    // 🖼 Rasm URL ajratish
-    let imageUrl = null;
-    if (found.photo) {
-      const m = found.photo.match(/src="([^"]+)"/);
-      imageUrl = m ? m[1] : null;
-    }
-    console.log("🖼 Image URL:", imageUrl);
-    // Frontendga qaytariladigan JSON
-    const responseJson = {
-      username: clean,
-      fullName: found.name || clean,
-      imageUrl,
-      recipient: recipientId
-    };
-    console.log("➡ Frontendga qaytmoqda:", responseJson);
-    return res.json(responseJson);
-  } catch (err) {
-    console.error("💥 PREMIUM SEARCH SERVER ERROR:", err);
-    return res.status(500).json({ error: "Server xato" });
-  }
+  return handlePremiumRecipientSearch(req, res, { pool });
 });
 //-----------------------
 // 🧾 PREMIUM ORDER YARATISH
@@ -3602,6 +3490,18 @@ app.post("/api/premium", orderLimiter, telegramAuth, async (req, res) => {
     }
     const clean = username.startsWith("@") ? username.slice(1) : username;
     console.log("🧹 Tozalangan username:", clean);
+
+    const monthsNum = parseInt(months, 10);
+    const eligibility = await checkPremiumRecipientEligibility(pool, clean, monthsNum);
+    if (!eligibility.ok) {
+      return sendPremiumEligibilityFailure(res, eligibility);
+    }
+
+    const resolvedRecipient = eligibility.profile?.recipient || recipient;
+    if (!resolvedRecipient) {
+      return res.status(400).json({ error: "recipient aniqlanmadi" });
+    }
+
     const priceMap = { 3: PREMIUM_3, 6: PREMIUM_6, 12: PREMIUM_12 };
     const baseAmount = priceMap[months];
     if (!baseAmount) {
@@ -3819,11 +3719,7 @@ app.post("/api/premium", orderLimiter, telegramAuth, async (req, res) => {
           const alreadyNotified = check.rows[0]?.expired_notified;
           if (ownerUserId && bot && !alreadyNotified) {
             try {
-              const expiredNotificationText = `⚠️ Siz premium sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              const expiredNotificationText = expiredPaymentNotifyText("premium sotib olish");
               await bot.telegram.sendMessage(ownerUserId, expiredNotificationText);
               await pool.query(
                 `UPDATE orders SET expired_notified = true WHERE id = $1`,
@@ -6131,11 +6027,7 @@ const uniqueSum = await generateUniqueOrderSum(finalAmount, client);
           const alreadyNotified = check.rows[0]?.expired_notified;
           if (ownerUserId && bot && !alreadyNotified) {
             try {
-              const expiredNotificationText = `⚠️ Siz gift yuborishga harakat qildingiz, ammo to'lov amalga oshirilmadi.
-
-Agar qandaydir muammo yuzaga kelgan bo'lsa, iltimos admin bilan bog'laning:
-
-👉 @StarsjoySupport`;
+              const expiredNotificationText = expiredPaymentNotifyText("gift yuborish");
               await bot.telegram.sendMessage(ownerUserId, expiredNotificationText);
               await pool.query(
                 `UPDATE orders SET expired_notified = true WHERE id = $1`,

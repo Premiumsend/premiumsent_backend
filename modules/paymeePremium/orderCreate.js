@@ -13,6 +13,11 @@ import {
   validateClientFinalAmount,
   validateClientSlotPrice,
 } from "../payments/clientAmountGuard.js";
+import { expiredPaymentNotifyText } from "../supportContact.js";
+import {
+  checkPremiumRecipientEligibility,
+  sendPremiumEligibilityFailure,
+} from "../premium/eligibility.js";
 
 const ORDER_TYPE = "premium_paymee";
 const VALID_MONTHS = [3, 6, 12];
@@ -104,6 +109,16 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
     }
 
     const cleanUsername = username.startsWith("@") ? username.slice(1) : username;
+
+    const eligibility = await checkPremiumRecipientEligibility(
+      pool,
+      cleanUsername,
+      monthsNum
+    );
+    if (!eligibility.ok) {
+      return sendPremiumEligibilityFailure(res, eligibility);
+    }
+
     const ownerUserId = req.telegramUser?.id ? String(req.telegramUser.id) : null;
     const slotKey = paymeePremiumSlotKey(monthsNum);
 
@@ -290,7 +305,7 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
             try {
               await bot.telegram.sendMessage(
                 owner,
-                `⚠️ Siz premium (Paymee) sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.\n\n👉 @StarsPaymeeSupport`
+                expiredPaymentNotifyText("premium (Paymee) sotib olish", { short: true })
               );
               await pool.query(`UPDATE orders SET expired_notified = true WHERE id = $1`, [
                 order.id,

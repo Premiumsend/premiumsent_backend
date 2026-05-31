@@ -17,8 +17,9 @@ const ADMIN_IDS = process.env.ADMIN_IDS.split(',').map(id => Number(id));
 // Mini app URL
 const APP_URL = process.env.WEBAPP_URL;
 
-// Majburiy obuna kanali
-const REQUIRED_CHANNEL = '@starsjoy';
+// Majburiy obuna kanali — https://t.me/premiumsenduz
+const REQUIRED_CHANNEL = '@premiumsenduz';
+const REQUIRED_CHANNEL_URL = 'https://t.me/premiumsenduz';
 
 // Buyurtmalar kanali
 const ORDERS_CHANNEL = -1003752422150;
@@ -53,7 +54,7 @@ function getSubscribeText() {
 
 function getSubscribeKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.url('📢 Kanalga obuna bo\'lish', 'https://t.me/starsjoy')],
+    [Markup.button.url('📢 Kanalga obuna bo\'lish', REQUIRED_CHANNEL_URL)],
     [Markup.button.callback('✅ Tekshirish', 'check_subscription')]
   ]);
 }
@@ -63,12 +64,13 @@ function getSubscribeKeyboard() {
 // CHIROYLI START XABARI
 // ===============================
 function getStartText(name) {
+  const greeting = name ? `, ${name}` : '';
   return `
-⭐ StarsJoy'ga xush kelibsiz!
+⭐ *Premiumsend uz*'ga xush kelibsiz${greeting}!
 
-Telegram Stars, Premium va Gifts - barchasini bir joydan, tez va qulay sotib oling.
+Telegram Premium — 3, 6 va 12 oylik paketlar. Tez va qulay sotib oling.
 
-Boshlash uchun START tugmani bosing 👇
+Boshlash uchun START tugmasini bosing 👇
 
 - - -
 
@@ -78,7 +80,7 @@ Boshlash uchun START tugmani bosing 👇
 
 🇬🇧 By tapping «START», you agree to our public offer.
 
-📄 Oferta: starsjoy.uz/oferta
+📢 Kanal: ${REQUIRED_CHANNEL_URL}
 
 `;
 }
@@ -167,7 +169,7 @@ bot.start(async (ctx) => {
     getStartText(fullName),
     Markup.inlineKeyboard([
         [
-          Markup.button.webApp("START", "https://vitahealth.uz/")
+          Markup.button.webApp("START", APP_URL || "https://vitahealth.uz/")
         ],
         
     ])
@@ -264,7 +266,7 @@ bot.action('check_subscription', async (ctx) => {
     getStartText(fullName),
     Markup.inlineKeyboard([
         [
-          Markup.button.webApp("START", "https://vitahealth.uz/")
+          Markup.button.webApp("START", APP_URL || "https://vitahealth.uz/")
         ],
         
     ])

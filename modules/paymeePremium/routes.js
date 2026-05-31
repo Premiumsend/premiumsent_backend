@@ -88,7 +88,7 @@ export function registerPaymeePremiumRoutes(app, ctx) {
   );
 
   app.post("/api/paymee-premium/search", searchLimiter, telegramAuth, (req, res) =>
-    paymeePremiumSearch(req, res)
+    paymeePremiumSearch(req, res, { pool: ctx.pool })
   );
 
   app.post("/api/paymee-premium/order", orderLimiter, telegramAuth, (req, res) =>

@@ -3,6 +3,11 @@ import {
   PROMO_USER_USAGE_SQL,
   releasePromocodeUsage,
 } from "../promocodes/helpers.js";
+import { expiredPaymentNotifyText } from "../supportContact.js";
+import {
+  checkPremiumRecipientEligibility,
+  sendPremiumEligibilityFailure,
+} from "../premium/eligibility.js";
 
 const ORDER_TYPE = "premium_usdt";
 const VALID_MONTHS = [3, 6, 12];
@@ -75,6 +80,16 @@ export async function createUsdtPremiumOrder(req, res, ctx) {
     }
 
     const cleanUsername = username.startsWith("@") ? username.slice(1) : username;
+
+    const eligibility = await checkPremiumRecipientEligibility(
+      pool,
+      cleanUsername,
+      monthsNum
+    );
+    if (!eligibility.ok) {
+      return sendPremiumEligibilityFailure(res, eligibility);
+    }
+
     const ownerUserId = req.telegramUser?.id ? String(req.telegramUser.id) : null;
     const slotKey = usdtPremiumSlotKey(monthsNum);
 
@@ -250,7 +265,7 @@ export async function createUsdtPremiumOrder(req, res, ctx) {
             try {
               await bot.telegram.sendMessage(
                 owner,
-                `⚠️ Siz premium (USDT) sotib olishga harakat qildingiz, ammo to'lov amalga oshirilmadi.\n\n👉 @StarsPaymeeSupport`
+                expiredPaymentNotifyText("premium (USDT) sotib olish", { short: true })
               );
               await pool.query(`UPDATE orders SET expired_notified = true WHERE id = $1`, [
                 order.id,

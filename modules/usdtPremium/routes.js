@@ -2,6 +2,7 @@ import { createUsdtPremiumOrder } from "./orderCreate.js";
 import { sendPremiumViaFragment } from "./delivery.js";
 import { getUsdtPremiumPrice } from "./price.js";
 import { logPaymentMatchDebug } from "../payments/matchDebug.js";
+import { handlePremiumRecipientSearch } from "../premium/recipientSearch.js";
 
 const ORDER_TYPE = "premium_usdt";
 
@@ -79,6 +80,10 @@ export function registerUsdtPremiumRoutes(app, ctx) {
 
   app.get("/api/usdt-premium/price/:months", (req, res) => getUsdtPremiumPrice(req, res, ctx));
 
+  app.post("/api/usdt-premium/search", searchLimiter, telegramAuth, (req, res) =>
+    handlePremiumRecipientSearch(req, res, { pool: ctx.pool })
+  );
+
   app.post("/api/usdt-premium/order", orderLimiter, telegramAuth, (req, res) =>
     createUsdtPremiumOrder(req, res, ctx)
   );
@@ -121,6 +126,6 @@ export function registerUsdtPremiumRoutes(app, ctx) {
   });
 
   console.log(
-    "✅ USDT Premium moduli: /api/usdt-premium/price, /api/usdt-premium/order, /api/usdt-premium/match"
+    "✅ USDT Premium moduli: /api/usdt-premium/price, /api/usdt-premium/search, /api/usdt-premium/order, /api/usdt-premium/match"
   );
 }

@@ -1,3 +1,5 @@
+import { deliveryFailedNotifyText } from "../supportContact.js";
+
 /** Telegram HTML xabarlar uchun xavfsiz matn (traceback dagi <module> va h.k.) */
 export function escapeTelegramHtml(text) {
   return String(text || "")
@@ -35,7 +37,7 @@ export async function notifyFragmentDeliveryIssue(ctx, order, errMsg, kind = "st
     try {
       await bot.telegram.sendMessage(
         owner,
-        `⚠️ To'lovingiz qabul qilindi, lekin ${isPremium ? "premium" : "stars"} hozir avtomatik yuborilmadi.\n\nAdmin tez orada yuboradi yoki @StarsPaymeeSupport ga yozing.\n\nBuyurtma #${order.id}`
+        deliveryFailedNotifyText(isPremium ? "premium" : "stars", order.id)
       );
     } catch {
       /* ignore */

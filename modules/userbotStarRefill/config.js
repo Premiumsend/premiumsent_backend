@@ -10,10 +10,14 @@ export function getRefillStarsAmount() {
 }
 
 export function getRefillRecipientUsername() {
-  const raw = String(process.env.GIFT_REFILL_USERNAME || "StarsjoySupport")
+  const raw = String(
+    process.env.GIFT_REFILL_USERNAME ||
+      process.env.SUPPORT_TELEGRAM_USERNAME ||
+      "PremiumSend_jbot"
+  )
     .trim()
     .replace(/^@/, "");
-  return raw || "StarsjoySupport";
+  return raw || "PremiumSend_jbot";
 }
 
 export function getRefillCooldownMs() {
