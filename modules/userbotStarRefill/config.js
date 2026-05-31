@@ -22,7 +22,8 @@ export function getRefillCooldownMs() {
 }
 
 export function getBalanceCheckerUrl() {
-  return process.env.BALANCE_CHECKER_URL || "http://localhost:5002";
+  const port = parseInt(process.env.BALANCE_CHECKER_PORT, 10) || 6002;
+  return process.env.BALANCE_CHECKER_URL || `http://127.0.0.1:${port}`;
 }
 
 export function getInternalSecret() {

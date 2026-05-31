@@ -19,9 +19,13 @@ const MATCH_API_STARS_USDT = process.env.MATCH_API_STARS_USDT;
 const MATCH_API_PREMIUM = process.env.MATCH_API_PREMIUM;
 const MATCH_API_PREMIUM_PAYMEE = process.env.MATCH_API_PREMIUM_PAYMEE;
 const MATCH_API_PREMIUM_USDT = process.env.MATCH_API_PREMIUM_USDT;
-const MATCH_API_GIFT = process.env.MATCH_API_GIFT || 'http://localhost:5001/api/gift/match';
+const API_PORT = parseInt(process.env.PORT, 10) || 6001;
+const MATCH_API_GIFT =
+    process.env.MATCH_API_GIFT ||
+    `http://127.0.0.1:${API_PORT}/api/gift/match`;
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || '';
-const BALANCE_CHECKER_PORT = 5002;
+const BALANCE_CHECKER_PORT =
+    parseInt(process.env.BALANCE_CHECKER_PORT, 10) || 6002;
 
 if (!process.env.INTERNAL_API_SECRET) {
     console.error('❌ OGOHLANTIRISH: INTERNAL_API_SECRET .env da yo\'q!');
@@ -632,8 +636,18 @@ app.get('/api/userbot/user-me', async (req, res) => {
 if (process.argv[1]?.includes('balanceChecker')) {
     console.log('🚀 SMS Listener mustaqil ishga tushmoqda...');
 
-    app.listen(BALANCE_CHECKER_PORT, () => {
+    const httpServer = app.listen(BALANCE_CHECKER_PORT, () => {
         console.log(`🌐 SMS Listener HTTP server: http://localhost:${BALANCE_CHECKER_PORT}`);
+    });
+    httpServer.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            console.error(
+                `❌ Port ${BALANCE_CHECKER_PORT} band! Eski jarayon: fuser -k ${BALANCE_CHECKER_PORT}/tcp`
+            );
+        } else {
+            console.error("❌ HTTP server xatosi:", err.message);
+        }
+        process.exit(1);
     });
 
     startBalanceChecker()

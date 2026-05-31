@@ -68,6 +68,11 @@ import {
   sendGuardFailure,
 } from "./modules/payments/clientAmountGuard.js";
 dotenv.config();
+
+const BALANCE_CHECKER_PORT = parseInt(process.env.BALANCE_CHECKER_PORT, 10) || 6002;
+const BALANCE_CHECKER_URL =
+  process.env.BALANCE_CHECKER_URL || `http://127.0.0.1:${BALANCE_CHECKER_PORT}`;
+
 const { Pool } = pkg;
 const app = express();
 // ======================
@@ -93,7 +98,13 @@ const ALLOWED_ORIGINS = [
 ].filter(Boolean);
 // Development uchun localhost ham qo'shiladi
 if (process.env.NODE_ENV !== 'production') {
-  ALLOWED_ORIGINS.push('http://localhost:5173', 'http://localhost:3000', 'http://localhost:5000');
+  ALLOWED_ORIGINS.push(
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5000',
+    'http://localhost:6000',
+    'http://127.0.0.1:6000'
+  );
 }
 app.use(cors({
   origin: function (origin, callback) {
@@ -2895,7 +2906,7 @@ app.post("/api/order", orderLimiter, telegramAuth, async (req, res) => {
     );
     // BALANCE CHECKER GA SIGNAL
     try {
-      fetch('http://localhost:5001/api/balance/refresh', {
+      fetch(`${BALANCE_CHECKER_URL}/api/balance/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: order.id, type: 'unified' })
@@ -3774,7 +3785,7 @@ app.post("/api/premium", orderLimiter, telegramAuth, async (req, res) => {
     console.log("🎉 ORDER CREATE →", order);
     //  BALANCE CHECKER GA SIGNAL - balansni yangilash
     try {
-      fetch('http://localhost:5001/api/balance/refresh', {
+      fetch(`${BALANCE_CHECKER_URL}/api/balance/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: order.id, type: 'premium' })
@@ -6085,7 +6096,7 @@ const uniqueSum = await generateUniqueOrderSum(finalAmount, client);
 
     // BALANCE CHECKER GA SIGNAL
     try {
-      fetch('http://localhost:5001/api/balance/refresh', {
+      fetch(`${BALANCE_CHECKER_URL}/api/balance/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: order.id, type: 'unified' })
@@ -6260,7 +6271,7 @@ async function sendGiftToUser(order) {
     // recipient / recipient_username — qabul qiluvchi (username); yuboruvchi owner_user_id + users jadvali
     console.log(`🎁 sendGiftToUser: #${order.id} → @${order.recipient} | gift: ${order.gift_id}`);
     // balanceChecker.js dagi userbot orqali gift yuborish
-    const giftRes = await fetch('http://localhost:5002/api/gift/send-userbot', {
+    const giftRes = await fetch(`${BALANCE_CHECKER_URL}/api/gift/send-userbot`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -6482,8 +6493,6 @@ app.get("/api/admin/wallet-info", adminAuth, async (req, res) => {
 // ======================
 // ⭐ ADMIN — User Stars Balance (Userbot GramJS orqali)
 // ======================
-const BALANCE_CHECKER_URL = process.env.BALANCE_CHECKER_URL || 'http://localhost:5002';
-
 app.get("/api/admin/bot-stars-balance", adminAuth, async (req, res) => {
   try {
     // Userbot orqali stars balance olish
@@ -6720,7 +6729,7 @@ app.post("/api/v2/order/create", orderLimiter, telegramAuth, async (req, res) =>
     
     // Balance checker ga signal
     try {
-      fetch('http://localhost:5001/api/balance/refresh', {
+      fetch(`${BALANCE_CHECKER_URL}/api/balance/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: order.id, type: 'unified' })
@@ -7445,7 +7454,7 @@ function getFragmentPaymentMethod() {
 
 const INTERNAL_API_BASE =
   process.env.INTERNAL_API_BASE ||
-  `http://127.0.0.1:${process.env.PORT || 5001}`;
+  `http://127.0.0.1:${process.env.PORT || 6001}`;
 
 const internalSecretAuth = internalAuth;
 

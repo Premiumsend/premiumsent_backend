@@ -31,6 +31,15 @@ const children = new Map();
 // .env tekshiruvi (usdt.md)
 // =============================
 function validateEnv() {
+  const starsPrice =
+    parseInt(process.env.STARS_PRICE_PER_UNIT, 10) ||
+    parseInt(process.env.VITE_NARX, 10);
+  if (!starsPrice || starsPrice <= 0) {
+    console.error("❌ STARS_PRICE_PER_UNIT yoki VITE_NARX .env da topilmadi!");
+    console.error("💡 .env ga qo'shing: STARS_PRICE_PER_UNIT=240");
+    process.exit(1);
+  }
+
   const required = [
     ["DATABASE_URL", process.env.DATABASE_URL],
     ["INTERNAL_API_SECRET", process.env.INTERNAL_API_SECRET],
@@ -114,7 +123,7 @@ function validateEnv() {
     }
   }
 
-  const port = process.env.PORT || "5001";
+  const port = process.env.PORT || "6001";
   if (!process.env.INTERNAL_API_BASE) {
     process.env.INTERNAL_API_BASE = `http://127.0.0.1:${port}`;
   }
@@ -294,7 +303,11 @@ runScript("SMS listener", "balanceChecker.js");
 console.log("\n✅ Hammasi ishga tushirildi:");
 console.log("   • API:        server.js (PORT=" + (process.env.PORT || 5001) + ")");
 console.log("   • Bot:        token.js");
-console.log("   • SMS/Match:  balanceChecker.js (HTTP :5002)");
+console.log(
+  "   • SMS/Match:  balanceChecker.js (HTTP :" +
+    (process.env.BALANCE_CHECKER_PORT || "6002") +
+    ")"
+);
 console.log("   • /stars      → RobynHood");
 console.log("   • /usdtstars  → Fragment Stars (TON — admin/settings)");
 console.log("   • /usdtpremium → Fragment Premium (TON)");
