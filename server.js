@@ -7390,6 +7390,7 @@ const usdtPremiumCtx = {
   sendUnifiedChannelNotification,
   processPremiumReferralBonusByUserId,
   orderLimiter,
+  searchLimiter,
   telegramAuth,
   internalSecretAuth,
   getFragmentPaymentMethod,

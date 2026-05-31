@@ -76,7 +76,7 @@ export async function matchUsdtPremiumPayment(req, res, ctx) {
 }
 
 export function registerUsdtPremiumRoutes(app, ctx) {
-  const { orderLimiter, telegramAuth, internalSecretAuth } = ctx;
+  const { orderLimiter, searchLimiter, telegramAuth, internalSecretAuth } = ctx;
 
   app.get("/api/usdt-premium/price/:months", (req, res) => getUsdtPremiumPrice(req, res, ctx));
 
