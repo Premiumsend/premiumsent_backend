@@ -6388,13 +6388,21 @@ app.get("/api/admin/wallet-info", adminAuth, async (req, res) => {
 app.get("/api/admin/paymee-balance", adminAuth, async (req, res) => {
   try {
     if (!paymeeConfigured()) {
-      return res.json({ success: true, configured: false });
+      return res.json({ ok: true, configured: false, error: null });
     }
     const summary = await getPaymeeWalletSummary();
-    return res.json({ success: true, ...summary });
+    return res.json({
+      ok: true,
+      configured: summary.configured !== false,
+      balance_usdt: summary.balance_usdt ?? null,
+      currency: summary.currency || "USDT",
+      usdt_per_star: summary.usdt_per_star ?? null,
+      available_stars: summary.available_stars ?? null,
+      error: summary.success === false ? summary.error || "Balans olinmadi" : null,
+    });
   } catch (err) {
     console.error("❌ /api/admin/paymee-balance ERROR:", err);
-    res.status(500).json({ success: false, error: "Failed to fetch Paymee balance" });
+    res.status(500).json({ ok: false, error: "Failed to fetch Paymee balance" });
   }
 });
 
