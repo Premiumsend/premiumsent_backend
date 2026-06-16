@@ -15,7 +15,7 @@ import {
 } from "../payments/clientAmountGuard.js";
 import { expiredPaymentNotifyText } from "../supportContact.js";
 import {
-  checkPremiumRecipientEligibility,
+  checkPaymeePremiumRecipientEligibility,
   sendPremiumEligibilityFailure,
 } from "../premium/eligibility.js";
 
@@ -110,7 +110,7 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
 
     const cleanUsername = username.startsWith("@") ? username.slice(1) : username;
 
-    const eligibility = await checkPremiumRecipientEligibility(
+    const eligibility = await checkPaymeePremiumRecipientEligibility(
       pool,
       cleanUsername,
       monthsNum

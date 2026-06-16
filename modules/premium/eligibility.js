@@ -1,5 +1,7 @@
 import { searchRobynRecipient, mapRobynSearchToProfile } from "../robynhoodClient/search.js";
 import { robynhoodConfigured } from "../robynhoodClient/client.js";
+import { searchPaymeeRecipient, mapPaymeeSearchToProfile } from "../paymeeClient/search.js";
+import { paymeeConfigured } from "../paymeeClient/client.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -157,6 +159,69 @@ export async function checkPremiumRecipientEligibility(pool, username, months = 
       imageUrl: null,
     },
   };
+}
+
+/**
+ * Premium qabul qiluvchi — StarsPaymee Partner API (POST /v1/search) orqali.
+ * Profilni va `found.premium` (allaqachon Premium'ga egami) ni qaytaradi.
+ * @returns {{ ok: true, profile }} | {{ ok: false, code, error }}
+ */
+export async function checkPaymeePremiumRecipientEligibility(pool, username, months = 3) {
+  const clean = normalizeUsername(username);
+  if (!clean || !/^[a-zA-Z0-9_]{4,32}$/.test(clean)) {
+    return { ok: false, code: "INVALID_USERNAME", error: "Username noto'g'ri" };
+  }
+
+  const monthsNum = [3, 6, 12].includes(Number(months)) ? Number(months) : 3;
+
+  if (await userHasActivePremiumInDb(pool, clean)) {
+    return { ok: false, code: "ALREADY_HAS_PREMIUM", error: PREMIUM_ALREADY_ACTIVE_MSG };
+  }
+
+  if (await userHasActivePremiumOrder(pool, clean)) {
+    return { ok: false, code: "ALREADY_HAS_PREMIUM", error: PREMIUM_ALREADY_ACTIVE_MSG };
+  }
+
+  if (!paymeeConfigured()) {
+    return {
+      ok: false,
+      code: "SEARCH_ERROR",
+      error: "StarsPaymee API sozlanmagan (STARS_PAYMEE_API_URL / API_KEY)",
+    };
+  }
+
+  try {
+    const { data, cleanUsername } = await searchPaymeeRecipient({
+      productType: "premium",
+      query: clean,
+      months: monthsNum,
+    });
+
+    // Partner API: found.premium === true bo'lsa profil allaqachon Premium'ga ega
+    if (data?.found?.premium === true) {
+      return { ok: false, code: "ALREADY_HAS_PREMIUM", error: PREMIUM_ALREADY_ACTIVE_MSG };
+    }
+
+    const profile = mapPaymeeSearchToProfile(data, cleanUsername);
+    if (!profile?.recipient) {
+      return { ok: false, code: "USER_NOT_FOUND", error: PREMIUM_RECIPIENT_UNAVAILABLE_MSG };
+    }
+
+    return { ok: true, profile };
+  } catch (err) {
+    if (err.status === 404) {
+      return { ok: false, code: "USER_NOT_FOUND", error: PREMIUM_RECIPIENT_UNAVAILABLE_MSG };
+    }
+    const msg = String(err.message || "").toLowerCase();
+    if (/already|premium.*(active|bor|faol)/i.test(msg)) {
+      return { ok: false, code: "ALREADY_HAS_PREMIUM", error: PREMIUM_ALREADY_ACTIVE_MSG };
+    }
+    return {
+      ok: false,
+      code: "SEARCH_ERROR",
+      error: err.message || PREMIUM_RECIPIENT_UNAVAILABLE_MSG,
+    };
+  }
 }
 
 export function sendPremiumEligibilityFailure(res, check) {

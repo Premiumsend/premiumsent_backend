@@ -17,7 +17,8 @@ export function extractPhotoUrl(photoField) {
  * @param {string} cleanUsername
  */
 export function mapPaymeeSearchToProfile(data, cleanUsername) {
-  if (!data?.ok || !data?.found) {
+  // Partner API muvaffaqiyatda `success: true` qaytaradi (`ok` emas)
+  if ((data?.success !== true && data?.ok !== true) || !data?.found) {
     return null;
   }
   const found = data.found;
@@ -31,6 +32,8 @@ export function mapPaymeeSearchToProfile(data, cleanUsername) {
     imageUrl,
     recipient,
     myself: Boolean(found.myself),
+    // premium: profil allaqachon Premium'ga egami (aniqlab bo'lmasa null)
+    premium: found.premium === true ? true : found.premium === false ? false : null,
   };
 }
 

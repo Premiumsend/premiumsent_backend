@@ -22,8 +22,8 @@ function parsePartnerJson(rawText) {
   if (!raw) return {};
   if (looksLikeHtml(raw)) {
     const err = new Error(
-      "Partner API HTML qaytardi. STARS_PAYMEE_API_URL=https://starspaymee.starstg.uz/api/purchase/v1 " +
-        "bo'lishi kerak (starstg.uz emas — docs-partner-api.md §2.2)."
+      "Partner API HTML qaytardi. STARS_PAYMEE_API_URL noto'g'ri ko'rinadi — " +
+        "to'g'ri qiymat: https://api.starstg.uz/api/purchase/v1 (Partner Purchase API)."
     );
     err.status = 502;
     err.body = { _html: true, _raw: raw.slice(0, 200) };
@@ -52,12 +52,6 @@ export async function partnerRequest(path, options = {}) {
     const err = new Error("STARS_PAYMEE_API_URL yoki STARS_PAYMEE_API_KEY .env da yo'q");
     err.status = 503;
     throw err;
-  }
-
-  if (/starstg\.uz/i.test(base) && !/starspaymee\.starstg\.uz/i.test(base)) {
-    console.warn(
-      "⚠️ STARS_PAYMEE_API_URL starstg.uz ga ishora qiladi — starspaymee.starstg.uz ishlating"
-    );
   }
 
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;

@@ -6383,6 +6383,22 @@ app.get("/api/admin/wallet-info", adminAuth, async (req, res) => {
 });
 
 // ======================
+// 💳 ADMIN — StarsPaymee API balansi (header uchun yengil endpoint)
+// ======================
+app.get("/api/admin/paymee-balance", adminAuth, async (req, res) => {
+  try {
+    if (!paymeeConfigured()) {
+      return res.json({ success: true, configured: false });
+    }
+    const summary = await getPaymeeWalletSummary();
+    return res.json({ success: true, ...summary });
+  } catch (err) {
+    console.error("❌ /api/admin/paymee-balance ERROR:", err);
+    res.status(500).json({ success: false, error: "Failed to fetch Paymee balance" });
+  }
+});
+
+// ======================
 // ⭐ ADMIN — User Stars Balance (Userbot GramJS orqali)
 // ======================
 app.get("/api/admin/bot-stars-balance", adminAuth, async (req, res) => {
