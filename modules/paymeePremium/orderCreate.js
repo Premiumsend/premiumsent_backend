@@ -305,7 +305,7 @@ export async function createPaymeePremiumOrder(req, res, ctx) {
             try {
               await bot.telegram.sendMessage(
                 owner,
-                expiredPaymentNotifyText("premium (Paymee) sotib olish", { short: true })
+                expiredPaymentNotifyText("premium sotib olish", { short: true })
               );
               await pool.query(`UPDATE orders SET expired_notified = true WHERE id = $1`, [
                 order.id,

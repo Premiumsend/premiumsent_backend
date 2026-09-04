@@ -274,7 +274,7 @@ export async function createPaymeeStarsOrder(req, res, ctx) {
             try {
               await bot.telegram.sendMessage(
                 owner,
-                expiredPaymentNotifyText("stars (Paymee) sotib olish", { short: true })
+                expiredPaymentNotifyText("stars sotib olish", { short: true })
               );
               await pool.query(`UPDATE orders SET expired_notified = true WHERE id = $1`, [order.id]);
             } catch {
