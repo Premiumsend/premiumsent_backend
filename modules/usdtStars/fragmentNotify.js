@@ -1,4 +1,4 @@
-import { deliveryFailedNotifyText } from "../supportContact.js";
+import { sendDelayedOrderNotify } from "../notifications/orderDelayedMessages.js";
 
 /** Telegram HTML xabarlar uchun xavfsiz matn (traceback dagi <module> va h.k.) */
 export function escapeTelegramHtml(text) {
@@ -33,14 +33,7 @@ export async function notifyFragmentDeliveryIssue(ctx, order, errMsg, kind = "st
     }
   }
 
-  if (bot && owner) {
-    try {
-      await bot.telegram.sendMessage(
-        owner,
-        deliveryFailedNotifyText(isPremium ? "premium" : "stars", order.id)
-      );
-    } catch {
-      /* ignore */
-    }
+  if (owner) {
+    await sendDelayedOrderNotify(ctx.pool, bot, order.id);
   }
 }

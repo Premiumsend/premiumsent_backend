@@ -3,7 +3,7 @@ import {
   PROMO_USER_USAGE_SQL,
   releasePromocodeUsage,
 } from "../promocodes/helpers.js";
-import { expiredPaymentNotifyText } from "../supportContact.js";
+import { sendExpiredOrderNotify } from "../notifications/orderExpiredMessages.js";
 import {
   checkPremiumRecipientEligibility,
   sendPremiumEligibilityFailure,
@@ -260,20 +260,7 @@ export async function createUsdtPremiumOrder(req, res, ctx) {
           releaseDiscountPriceSlotByOrderId(order.id);
           removePriceFromCacheByOrderId(order.id);
 
-          const owner = check.rows[0]?.owner_user_id;
-          if (owner && bot && !check.rows[0]?.expired_notified) {
-            try {
-              await bot.telegram.sendMessage(
-                owner,
-                expiredPaymentNotifyText("premium (USDT) sotib olish", { short: true })
-              );
-              await pool.query(`UPDATE orders SET expired_notified = true WHERE id = $1`, [
-                order.id,
-              ]);
-            } catch {
-              /* ignore */
-            }
-          }
+          await sendExpiredOrderNotify(pool, bot, order.id);
         }
       } catch {
         /* ignore */

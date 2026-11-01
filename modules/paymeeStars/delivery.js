@@ -8,6 +8,7 @@ import {
   paymeeConfigured,
 } from "../paymeeClient/index.js";
 import { paymeeSlotKey } from "./orderCreate.js";
+import { sendDelayedOrderNotify } from "../notifications/orderDelayedMessages.js";
 
 /**
  * stars_paymee buyurtmasini StarsPaymee Partner API orqali yetkazish.
@@ -106,6 +107,7 @@ export async function sendStarsViaPaymee(order, ctx) {
             .catch(() => {});
         }
       }
+      await sendDelayedOrderNotify(pool, bot, orderId);
       throw err;
     }
 
