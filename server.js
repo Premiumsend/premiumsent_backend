@@ -67,7 +67,7 @@ import {
   rejectForbiddenClientPriceFields,
   sendGuardFailure,
 } from "./modules/payments/clientAmountGuard.js";
-import { sendExpiredOrderNotify } from "./modules/notifications/orderExpiredMessages.js";
+import { normalizeLanguage, sendExpiredOrderNotify } from "./modules/notifications/orderExpiredMessages.js";
 import { sendDeliveredOrderNotify } from "./modules/notifications/orderDeliveredMessages.js";
 import { sendDelayedOrderNotify } from "./modules/notifications/orderDelayedMessages.js";
 import { handlePremiumRecipientSearch } from "./modules/premium/recipientSearch.js";
@@ -1272,8 +1272,7 @@ function parseTelegramChatId(envVal, fallback) {
 
 const ORDERS_CHANNEL = parseTelegramChatId(process.env.ORDERS_CHANNEL, -1003752422150);
 const ERROR_LOG_CHANNEL_ID = parseTelegramChatId(process.env.ERROR_LOG_CHANNEL_ID, -1003836618718);
-const SUBSCRIPTION_CHANNEL = "@starsjoyuz"; // Obuna bo'lish kerak bo'lgan kanal
-const WEBAPP_URL = process.env.WEBAPP_URL || "https://vitahealth.uz";
+const WEBAPP_URL = process.env.WEBAPP_URL || "https://themotion.uz";
 let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
@@ -1282,33 +1281,55 @@ if (BOT_TOKEN) {
   console.warn('⚠️ BOT_TOKEN .env da topilmadi - orders channel xabarlar yuborilmaydi');
 }
 
-// 🎉 Yangi foydalanuvchiga xush kelibsiz xabari yuborish
-async function sendWelcomeMessage(userId, userName) {
+// 🎉 Yangi foydalanuvchiga xush kelibsiz xabari (Telegram tilida)
+const WELCOME_TEXTS = {
+  uz: {
+    hello: (name) => `🎉 <b>Xush kelibsiz, ${name || "do'stim"}!</b>`,
+    about: "✨ <b>PremiumSend</b> — Telegram Stars va Premium xarid qilishning qulay va ishonchli platformasi!",
+    channel: "📢 Kanalimizga obuna bo'ling va yangiliklar, maxsus takliflardan xabardor bo'ling!",
+    items: "Stars xarid qilish\nPremium sotib olish",
+    channelBtn: "📢 Kanal",
+  },
+  ru: {
+    hello: (name) => `🎉 <b>Добро пожаловать, ${name || "друг"}!</b>`,
+    about: "✨ <b>PremiumSend</b> — удобная и надёжная платформа для покупки Telegram Stars и Premium!",
+    channel: "📢 Подпишитесь на наш канал, чтобы следить за новостями и специальными предложениями!",
+    items: "Покупка Stars\nПокупка Premium",
+    channelBtn: "📢 Канал",
+  },
+  en: {
+    hello: (name) => `🎉 <b>Welcome, ${name || "friend"}!</b>`,
+    about: "✨ <b>PremiumSend</b> is a convenient and reliable way to buy Telegram Stars and Premium!",
+    channel: "📢 Subscribe to our channel for news and special offers!",
+    items: "Buy Stars\nBuy Premium",
+    channelBtn: "📢 Channel",
+  },
+};
+
+const escapeWelcomeName = (text) =>
+  String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+async function sendWelcomeMessage(userId, userName, languageCode) {
   if (!bot || !userId) {
     console.log('❌ Bot ishga tushmagan yoki userId yo\'q, xabar yuborilmadi');
     return;
   }
   try {
-    const welcomeText = `🎉 <b>Xush kelibsiz, ${userName || 'do\'stim'}!</b>
+    const tr = WELCOME_TEXTS[normalizeLanguage(languageCode)];
+    const welcomeText = `${tr.hello(escapeWelcomeName(userName || ""))}
 
-✨ <b>StarsJoy</b> — Telegram Stars va Premium xarid qilishning eng qulay va ishonchli platformasi!
+${tr.about}
 
-📢 Kanalimizga obuna bo'ling va barcha yangiliklar, chegirmalar va maxsus takliflardan xabardor bo'ling!
+${tr.channel}
 
-Stars xarid qilish
-Premium sotib olish
-Do'stlaringizga Gift yuborish
-
-Barchasi bir joyda — <b>StarsJoy</b>!`;
+${tr.items}`;
 
     await bot.telegram.sendMessage(userId, welcomeText, {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [
-            { text: '�Start', url: 'https://t.me/StarsjoyBot?start=welcome' }
-          ],
-          
+          [{ text: '⭐️ START', web_app: { url: WEBAPP_URL } }],
+          [{ text: tr.channelBtn, url: 'https://t.me/premiumsenduz' }],
         ]
       }
     });
@@ -4541,7 +4562,7 @@ app.post("/api/referral/register", authLimiter, telegramAuth, async (req, res) =
         }
       }
 
-      sendWelcomeMessage(tgUserId, tgName || savedUsername).catch((err) => {
+      sendWelcomeMessage(tgUserId, tgName || savedUsername, tgUser?.language_code).catch((err) => {
         console.error("❌ Welcome message error:", err.message);
       });
     }
@@ -4672,7 +4693,7 @@ app.get("/api/referral/link/:user_id", telegramAuth, async (req, res) => {
     const userData = user.rows[0];
     
     // Telegram Mini App Link
-    const referralLink = `https://t.me/StarsjoyBot/starsjoy?startapp=${userData.referral_code}`;
+    const referralLink = `https://t.me/PremiumSendBot?startapp=${userData.referral_code}`;
     res.json({
       name: userData.name,
       username: userData.username,
