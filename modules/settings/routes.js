@@ -1,6 +1,8 @@
 import {
+  getPaymentCardsForAdmin,
   getPublicAppConfig,
   setMaintenance,
+  setPaymentCardSlot,
   setStarsPurchaseMode,
   setFragmentPaymentMethod,
   toPublicAppConfig,
@@ -37,6 +39,27 @@ export function registerSettingsRoutes(app, ctx) {
       res.json({ success: true, ...toPublicAppConfig(settings) });
     } catch (err) {
       console.error("❌ GET /api/admin/settings:", err.message);
+      res.status(500).json({ error: "Server xatosi" });
+    }
+  });
+
+  app.get("/api/admin/payment-cards", adminAuth, async (_req, res) => {
+    try {
+      res.json({ success: true, cards: await getPaymentCardsForAdmin(pool) });
+    } catch (err) {
+      console.error("❌ GET /api/admin/payment-cards:", err.message);
+      res.status(500).json({ error: "Server xatosi" });
+    }
+  });
+
+  /** Mijozga ko'rsatiladigan kartani almashtirish */
+  app.post("/api/admin/payment-card", adminAuth, async (req, res) => {
+    try {
+      await setPaymentCardSlot(pool, req.body?.slot);
+      res.json({ success: true, cards: await getPaymentCardsForAdmin(pool) });
+    } catch (err) {
+      if (err.code === "CARD_NOT_CONFIGURED") return res.status(400).json({ error: err.message });
+      console.error("❌ POST /api/admin/payment-card:", err.message);
       res.status(500).json({ error: "Server xatosi" });
     }
   });

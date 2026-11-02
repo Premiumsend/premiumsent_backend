@@ -1,3 +1,5 @@
+import { listMonitoredCards } from "../settings/paymentCard.js";
+
 /** Klient yuborishi mumkin bo'lmagan narx maydonlari (Paymee / karta oqimi) */
 export const CLIENT_FORBIDDEN_PRICE_KEYS = [
   "amount",
@@ -109,18 +111,16 @@ export function sendGuardFailure(res, guardResult) {
   return res.status(guardResult.status).json(guardResult.body);
 }
 
-/** SMS match: karta oxirgi 4 raqam (.env TARGET_CARD_SUFFIX) */
+/** SMS match: karta oxirgi 4 raqam — kuzatilayotgan istalgan karta */
 export function validatePaymentCardLast4(cardLast4) {
-  const expected = String(process.env.TARGET_CARD_SUFFIX || "")
-    .replace(/\D/g, "")
-    .slice(-4);
-  if (!expected) {
+  const known = listMonitoredCards().map((c) => c.card_last4);
+  if (!known.length) {
     return { ok: true, skipped: true };
   }
   const got = String(cardLast4 || "")
     .replace(/\D/g, "")
     .slice(-4);
-  if (!got || got !== expected) {
+  if (!got || !known.includes(got)) {
     return {
       ok: false,
       status: 400,

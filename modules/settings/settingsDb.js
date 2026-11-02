@@ -1,3 +1,5 @@
+import { getPaymentCard, listPaymentCards, normalizeCardSlot, setActiveCardSlot } from "./paymentCard.js";
+
 /**
  * `settings` jadvali — admin panel switchlari (maintenance, purchase mode, payment method).
  * Fragment cookie lar `tokens` jadvalida qoladi.
@@ -8,6 +10,7 @@ export const SETTING_KEYS = {
   STARS_PURCHASE_MODE: "stars_purchase_mode",
   FRAGMENT_PAYMENT_METHOD: "fragment_payment_method",
   USERBOT_AUTO_REFILL: "userbot_auto_refill_enabled",
+  PAYMENT_CARD_SLOT: "payment_card_slot",
 };
 
 const DEFAULTS = {
@@ -117,6 +120,9 @@ export async function loadSettings(pool, force = false) {
     ),
   };
 
+  normalized.payment_card_slot = normalizeCardSlot(map[SETTING_KEYS.PAYMENT_CARD_SLOT]);
+  setActiveCardSlot(normalized.payment_card_slot);
+
   cache = normalized;
   cacheAt = Date.now();
   return { ...normalized };
@@ -135,6 +141,7 @@ export function toPublicAppConfig(settings) {
     starsPath = "/paymeestars";
     premiumPath = "/paymeepremium";
   }
+  const card = getPaymentCard();
   return {
     maintenance: Boolean(settings.maintenance),
     stars_purchase_mode: mode,
@@ -142,12 +149,45 @@ export function toPublicAppConfig(settings) {
     premium_purchase_path: premiumPath,
     fragment_payment_method: settings.fragment_payment_method,
     fragment_payment_label: fragmentPaymentMethodLabel(settings.fragment_payment_method),
+    card_provider: "uzcard",
+    card_provider_label: "UZCARD",
+    card_number: card.card_number,
+    card_name: card.card_name,
+    card_last4: card.card_last4,
   };
 }
 
 export async function getPublicAppConfig(pool) {
   const settings = await loadSettings(pool);
   return toPublicAppConfig(settings);
+}
+
+/** Admin panel uchun: barcha kartalar va qaysi biri faol */
+export async function getPaymentCardsForAdmin(pool) {
+  await loadSettings(pool, true);
+  const active = getPaymentCard().slot;
+  return listPaymentCards().map((c) => ({
+    slot: c.slot,
+    label: "UZCARD",
+    display: c.card_number.replace(/(\d{4})(?=\d)/g, "$1 "),
+    name: c.card_name,
+    configured: c.configured,
+    active: c.slot === active,
+  }));
+}
+
+/** Admin switch: raqami yo'q slotni tanlashga yo'l qo'yilmaydi (ekranda bo'sh karta chiqmasin) */
+export async function setPaymentCardSlot(pool, value) {
+  const slot = normalizeCardSlot(value);
+  const card = listPaymentCards().find((c) => c.slot === slot);
+  if (!card?.configured) {
+    const err = new Error("Bu karta sozlanmagan");
+    err.code = "CARD_NOT_CONFIGURED";
+    throw err;
+  }
+  await setSetting(pool, SETTING_KEYS.PAYMENT_CARD_SLOT, slot);
+  await loadSettings(pool, true);
+  console.log(`💳 To'lov kartasi almashtirildi: ***${card.card_last4}`);
 }
 
 export async function setMaintenance(pool, enabled) {

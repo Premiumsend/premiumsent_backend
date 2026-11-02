@@ -5,13 +5,15 @@ import { StringSession } from 'telegram/sessions/index.js';
 import { NewMessage } from 'telegram/events/index.js';
 import fetch from 'node-fetch';
 import express from 'express';
+import pg from 'pg';
+import { listMonitoredCards, normalizeCardSlot } from './modules/settings/paymentCard.js';
+import { createCardLimitGuard } from './modules/cardLimit/index.js';
 
 // ================== CONFIG ==================
 const apiId = parseInt(process.env.TG_API_ID);
 const apiHash = process.env.TG_API_HASH;
 const stringSession = new StringSession(process.env.TG_SESSION);
 const UZCARD_CHAT_ID = String(process.env.UZCARD_CHAT_ID);
-const TARGET_CARD_SUFFIX = process.env.TARGET_CARD_SUFFIX?.replace(/\D/g, "").slice(-4);
 
 const MATCH_API_STARS = process.env.MATCH_API_STARS;
 const MATCH_API_STARS_PAYMEE = process.env.MATCH_API_STARS_PAYMEE;
@@ -33,6 +35,31 @@ if (!process.env.INTERNAL_API_SECRET) {
 }
 if (!MATCH_API_STARS || !MATCH_API_PREMIUM) {
     console.error('❌ MATCH_API_STARS yoki MATCH_API_PREMIUM .env da yo\'q!');
+}
+
+let cardLimitGuard = null;
+
+async function initCardLimitGuard() {
+    if (cardLimitGuard) return;
+    const pool = new pg.Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 3,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+    });
+    pool.on('error', (err) => console.error('❌ Karta limiti pool xatosi:', err.message));
+    const guard = createCardLimitGuard({
+        pool,
+        project: 'PremiumSend',
+        settingKey: 'payment_card_slot',
+        listUzcards: () => listMonitoredCards().map((c) => ({ slot: c.slot, last4: c.card_last4 })),
+        fallbackSlot: () => 'uzcard1',
+        normalizeSlot: normalizeCardSlot,
+    });
+    await guard.ensureTables();
+    guard.startWorker();
+    cardLimitGuard = guard;
+    console.log('🛡️ Karta limiti nazorati tayyor');
 }
 
 // Telegram client (global)
@@ -227,19 +254,20 @@ export async function initBalanceClient() {
                     text: msg.message,
                 });
 
+                cardLimitGuard?.handleSms(text).catch((e) => console.error('❌ Karta limiti:', e.message));
+
                 if (!text.includes("➕")) return;
-                if (!TARGET_CARD_SUFFIX) {
-                    console.warn("⚠️ TARGET_CARD_SUFFIX yo'q — SMS qayta ishlanmaydi");
+                const monitoredCards = listMonitoredCards();
+                if (!monitoredCards.length) {
+                    console.warn("⚠️ Karta sozlanmagan — SMS qayta ishlanmaydi");
                     return;
                 }
 
                 const parsed = parsePayment(text);
                 if (!parsed) return;
 
-                if (parsed.card_last4 !== TARGET_CARD_SUFFIX) {
-                    console.log(
-                        `⏭️ Boshqa karta: SMS ***${parsed.card_last4}, kutilgan ***${TARGET_CARD_SUFFIX}`
-                    );
+                if (!monitoredCards.some((c) => c.card_last4 === parsed.card_last4)) {
+                    console.log(`⏭️ Boshqa karta: SMS ***${parsed.card_last4}`);
                     return;
                 }
 
@@ -407,6 +435,8 @@ export async function initBalanceClient() {
 // ================== START (faqat SMS listener) ==================
 export async function startBalanceChecker() {
     console.log('🚀 SMS Listener ishga tushmoqda...');
+
+    await initCardLimitGuard().catch((e) => console.error('❌ Karta limiti nazorati ishga tushmadi:', e.message));
 
     const ok = await initBalanceClient();
     if (!ok) {
