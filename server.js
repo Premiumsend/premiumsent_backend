@@ -52,7 +52,20 @@ import {
   startPaymeeBalanceMonitor,
   checkPaymeeFulfillment,
   sendPaymeeInsufficientResponse,
+  deliverStarsViaPaymeeApi,
+  isPartnerPurchaseSuccess,
+  isPaymeeBalanceError,
+  isPaymeeConfigError,
+  isPaymeeRetryableError,
 } from "./modules/paymeeClient/index.js";
+import {
+  ensureRewardsTables,
+  creditRewardsForOrder,
+  reconcileRedemptions,
+  registerRewardsRoutes,
+  registerRewardsAdminRoutes,
+  runRewardsCreditJob,
+} from "./modules/rewards/index.js";
 import {
   PROMO_USER_USAGE_SQL,
   releasePromocodeUsage,
@@ -7035,6 +7048,10 @@ async function sendUnifiedChannelNotification(order, type, isFailed = false) {
   } else {
     // 📩 Foydalanuvchiga "muvaffaqiyatli yuborildi" xabari (o'z tilida)
     await sendDeliveredOrderNotify(pool, bot, order.id);
+    // 🎁 Bonus: xaridorga (5 daqiqadan keyin, navbat orqali)
+    creditRewardsForOrder({ pool, bot }, order.id).catch((err) =>
+      console.error("❌ Bonus yozishda xato:", err.message)
+    );
   }
 }
 // 🎁 Referral bonus user_id orqali
@@ -7446,6 +7463,45 @@ registerPaymeePremiumRoutes(app, paymeePremiumCtx);
 registerRobynhoodAdminRoutes(app, { pool, adminAuth });
 
 registerSettingsRoutes(app, { pool, adminAuth });
+// 🎁 Bonuslar: xarid uchun ⭐, balansdan Stars'ga almashtirish (o'ziga yoki istalgan username'ga)
+ensureRewardsTables(pool).catch((e) => console.error("❌ Bonus jadvallarini yaratishda xato:", e.message));
+const rewardsCtx = {
+  pool,
+  bot,
+  telegramAuth,
+  authLimiter,
+  sendDeliveredOrderNotify,
+  notifyErrorChannel: (text) =>
+    sendOrdersChannelMessage({ text, channelId: ERROR_LOG_CHANNEL_ID, bot, botToken: BOT_TOKEN }).catch(() => {}),
+  // Faqat yetkazish: mijoz xabari va kanal xabarini finalizeRedemption yuboradi
+  deliverRewardOrder: async (order) => {
+    const username = order.recipient_username || order.recipient;
+    let data;
+    try {
+      data = await deliverStarsViaPaymeeApi(username, order.type_amount, order.id, `paymee-reward-${order.id}`);
+    } catch (err) {
+      // Vaqtinchalik xatoda yuborilgan-yuborilmagani noma'lum: processing'da qoladi
+      if (!(isPaymeeBalanceError(err) || isPaymeeConfigError(err) || isPaymeeRetryableError(err))) {
+        await pool.query("UPDATE orders SET status = 'failed' WHERE id = $1", [order.id]);
+      }
+      throw err;
+    }
+    if (!isPartnerPurchaseSuccess(data)) {
+      await pool.query("UPDATE orders SET status = 'failed' WHERE id = $1", [order.id]);
+      throw new Error(data?.error || "Paymee javob noto'g'ri");
+    }
+    const txId = data.transaction_id || `paymee_${order.id}_${Date.now()}`;
+    await pool.query("UPDATE orders SET status = 'completed', transaction_id = $1 WHERE id = $2", [txId, order.id]);
+  },
+};
+registerRewardsRoutes(app, rewardsCtx);
+registerRewardsAdminRoutes(app, { ...rewardsCtx, adminAuth });
+setInterval(() => {
+  runRewardsCreditJob(rewardsCtx).catch((e) => console.error("❌ Bonus navbati job:", e.message));
+}, 60 * 1000);
+setInterval(() => {
+  reconcileRedemptions(rewardsCtx).catch((e) => console.error("❌ Bonus reconcile:", e.message));
+}, 10 * 60 * 1000);
 registerUserbotStarRefillRoutes(app, {
   pool,
   adminAuth,
