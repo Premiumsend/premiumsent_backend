@@ -9,9 +9,9 @@ import { escapeTelegramHtml } from "../telegram/channelNotify.js";
 const ADMIN_GRANT_MAX = 1000;
 
 const GRANT_TEXTS = {
-  uz: { title: (n) => `🎁 Admin tomonidan sizga +${n} ⭐ bonus berildi!`, reason: "Sabab", body: "Bonuslarni ilovadagi «Bonuslar» bo'limida ko'rasiz va Stars'ga almashtirasiz.", button: "🎁 Bonuslar" },
-  ru: { title: (n) => `🎁 Админ начислил вам +${n} ⭐ бонуса!`, reason: "Причина", body: "Смотрите их в разделе «Бонусы» в приложении и обменивайте на Stars.", button: "🎁 Бонусы" },
-  en: { title: (n) => `🎁 The admin has given you +${n} ⭐ bonus!`, reason: "Reason", body: "Find it in the «Rewards» section of the app and exchange it for Stars.", button: "🎁 Rewards" },
+  uz: { title: (n) => `🎁 Admin tomonidan sizga +${n} ⭐ bonus berildi!`, reason: "Sabab", body: "Bonuslarni ilovadagi «Bonuslar» bo'limida ko'rasiz va yechib olasiz.", button: "🎁 Bonuslar" },
+  ru: { title: (n) => `🎁 Админ начислил вам +${n} ⭐ бонуса!`, reason: "Причина", body: "Смотрите их в разделе «Бонусы» в приложении и выводите их.", button: "🎁 Бонусы" },
+  en: { title: (n) => `🎁 The admin has given you +${n} ⭐ bonus!`, reason: "Reason", body: "Find it in the «Rewards» section of the app and withdraw it.", button: "🎁 Rewards" },
 };
 
 /**
