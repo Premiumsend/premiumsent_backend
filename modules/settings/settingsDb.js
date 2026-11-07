@@ -11,6 +11,8 @@ export const SETTING_KEYS = {
   FRAGMENT_PAYMENT_METHOD: "fragment_payment_method",
   USERBOT_AUTO_REFILL: "userbot_auto_refill_enabled",
   PAYMENT_CARD_SLOT: "payment_card_slot",
+  /** Balans muammosi: mijozga "buyurtma 12 soatgacha kechikishi mumkin" ogohlantirishi */
+  DELAY_NOTICE: "delay_notice",
 };
 
 const DEFAULTS = {
@@ -18,6 +20,7 @@ const DEFAULTS = {
   [SETTING_KEYS.STARS_PURCHASE_MODE]: "robynhood",
   [SETTING_KEYS.FRAGMENT_PAYMENT_METHOD]: "ton",
   [SETTING_KEYS.USERBOT_AUTO_REFILL]: "true",
+  [SETTING_KEYS.DELAY_NOTICE]: "false",
 };
 
 /** Eski `tokens` jadvalidan bir martalik ko'chirish */
@@ -118,6 +121,7 @@ export async function loadSettings(pool, force = false) {
       map[SETTING_KEYS.USERBOT_AUTO_REFILL],
       true
     ),
+    delay_notice: parseBoolSetting(map[SETTING_KEYS.DELAY_NOTICE], false),
   };
 
   normalized.payment_card_slot = normalizeCardSlot(map[SETTING_KEYS.PAYMENT_CARD_SLOT]);
@@ -144,6 +148,7 @@ export function toPublicAppConfig(settings) {
   const card = getPaymentCard();
   return {
     maintenance: Boolean(settings.maintenance),
+    delay_notice: Boolean(settings.delay_notice),
     stars_purchase_mode: mode,
     stars_purchase_path: starsPath,
     premium_purchase_path: premiumPath,
@@ -204,6 +209,11 @@ export async function setStarsPurchaseMode(pool, mode) {
 export async function setFragmentPaymentMethod(pool, method) {
   const pm = normalizeFragmentPaymentMethod(method);
   await setSetting(pool, SETTING_KEYS.FRAGMENT_PAYMENT_METHOD, pm);
+  return loadSettings(pool, true);
+}
+
+export async function setDelayNotice(pool, enabled) {
+  await setSetting(pool, SETTING_KEYS.DELAY_NOTICE, enabled ? "true" : "false");
   return loadSettings(pool, true);
 }
 
