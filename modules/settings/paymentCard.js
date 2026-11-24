@@ -1,5 +1,5 @@
 /**
- * To'lov kartalari — ikkita UZCARD slot. Asosiysi `.env` dagi VITE_CARD_*, zaxirasi UZCARD2_CARD_*.
+ * To'lov kartalari — uchta UZCARD slot. Asosiysi `.env` dagi VITE_CARD_*, zaxirasi UZCARD2_CARD_*, oxirgi zaxira UZCARD3_CARD_* (*5830).
  * Qaysi biri mijozga ko'rsatilishi `settings.payment_card_slot` da, SMS esa ikkalasidan ham qabul qilinadi:
  * karta almashganda eski kartaga to'lagan mijoz yo'qolmasin.
  */
@@ -14,6 +14,11 @@ const SLOTS = {
   uzcard2: {
     number: () => process.env.UZCARD2_CARD_NUMBER,
     name: () => process.env.UZCARD2_CARD_NAME,
+  },
+  // *5830 — oxirgi zaxira: ikkala aylanma karta limitda bo'lsa avtomatika shunga o'tkazadi (25.11)
+  uzcard3: {
+    number: () => process.env.UZCARD3_CARD_NUMBER,
+    name: () => process.env.UZCARD3_CARD_NAME,
   },
 };
 
