@@ -46,7 +46,7 @@ export async function sendPremiumViaPaymee(order, ctx) {
       data = await deliverPremiumViaPaymeeApi(username, months, orderId);
     } catch (firstErr) {
       if (shouldRetryPaymeePurchase(firstErr)) {
-        const retryKey = `paymee-premium-${orderId}-r-${Date.now()}`;
+        const retryKey = `ps-paymee-premium-${orderId}-r-${Date.now()}`;
         console.warn(
           `🔄 Paymee premium #${orderId} qayta urinish (${firstErr.message}) key=${retryKey}`
         );

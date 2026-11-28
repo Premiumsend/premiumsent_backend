@@ -7483,7 +7483,7 @@ const rewardsCtx = {
     const username = order.recipient_username || order.recipient;
     let data;
     try {
-      data = await deliverStarsViaPaymeeApi(username, order.type_amount, order.id, `paymee-reward-${order.id}`);
+      data = await deliverStarsViaPaymeeApi(username, order.type_amount, order.id, `ps-paymee-reward-${order.id}`);
     } catch (err) {
       // Vaqtinchalik xatoda yuborilgan-yuborilmagani noma'lum: processing'da qoladi
       if (!(isPaymeeBalanceError(err) || isPaymeeConfigError(err) || isPaymeeRetryableError(err))) {

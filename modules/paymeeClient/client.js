@@ -187,7 +187,7 @@ export async function getPaymeeWalletSummary() {
 
 export async function deliverStarsViaPaymeeApi(username, stars, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
-  const key = idempotencyKey || `paymee-stars-${orderId}`;
+  const key = idempotencyKey || `ps-paymee-stars-${orderId}`;
   return partnerRequest("/stars", {
     method: "POST",
     body: JSON.stringify({
@@ -200,7 +200,7 @@ export async function deliverStarsViaPaymeeApi(username, stars, orderId, idempot
 
 export async function deliverPremiumViaPaymeeApi(username, months, orderId, idempotencyKey) {
   const clean = String(username || "").replace(/^@/, "").trim();
-  const key = idempotencyKey || `paymee-premium-${orderId}`;
+  const key = idempotencyKey || `ps-paymee-premium-${orderId}`;
   return partnerRequest("/premium", {
     method: "POST",
     body: JSON.stringify({

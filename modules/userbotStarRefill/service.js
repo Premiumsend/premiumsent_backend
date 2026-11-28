@@ -90,7 +90,7 @@ export async function ensureUserbotStarRefillForGiftOrder(ctx, options = {}) {
       status: "pending",
     });
 
-    const idempotencyKey = `userbot-refill-${record.id}`;
+    const idempotencyKey = `ps-userbot-refill-${record.id}`;
     let paymeeData;
 
     try {
